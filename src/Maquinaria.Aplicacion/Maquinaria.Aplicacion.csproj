@@ -4,6 +4,13 @@
     <ProjectReference Include="..\Maquinaria.Dominio\Maquinaria.Dominio.csproj" />
   </ItemGroup>
 
+  <!-- Solo las ABSTRACCIONES de logging. Los casos de uso registran lo que pasa sin
+       conocer el proveedor: Aplicacion no debe saber si al final se escribe a consola,
+       a Railway o a un archivo. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

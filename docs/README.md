@@ -11,13 +11,17 @@ SaaS multi-tenant para empresas de renta de maquinaria y equipo.
 |---|---|---|
 | [00-puesta-en-marcha.md](00-puesta-en-marcha.md) | Herramientas, versiones, Neon, comandos ejecutados, problemas y soluciones. **§8: arrancar en otra máquina** | Al montar el entorno, al reconstruirlo o al clonar en una máquina nueva |
 | [01-arquitectura.md](01-arquitectura.md) | Stack, multi-tenancy con base por empresa, capas, convenciones de BD, permisos, despliegue | Antes de tomar cualquier decisión técnica |
-| [02-modelo-datos.md](02-modelo-datos.md) | 75 entidades de los 30 módulos, decisiones estructurales, dónde vive cada regla | Antes de agregar una entidad o tabla |
+| [02-modelo-datos.md](02-modelo-datos.md) | ~75 entidades de los 26 módulos, decisiones estructurales, dónde vive cada regla | Antes de agregar una entidad o tabla |
 | [03-plan-desarrollo.md](03-plan-desarrollo.md) | Método de rebanadas verticales, fases 0 a 6, desglose de arranque | Al planear qué sigue |
 | [04-pendientes.md](04-pendientes.md) | Huecos de la especificación, decisiones de producto, riesgos técnicos | Antes de comprometer una fecha o cerrar una fase |
-| [05-esquema-fase0.md](05-esquema-fase0.md) | DDL de las 15 tablas de la Fase 0, aprovisionamiento, login, índices, migraciones | Al escribir las entidades y migraciones actuales |
+| [05-esquema-fase0.md](05-esquema-fase0.md) | DDL de las 19 tablas de la Fase 0, aprovisionamiento, login, índices, migraciones | Al escribir las entidades y migraciones actuales |
 
-La especificación funcional original del negocio está en
-[`../Especificacion_Funcional_Software_Renta_Maquinaria (1) (1).docx`](..).
+La especificación funcional original del negocio **ya está en el repositorio**:
+[`../Especificacion_Funcional_Software_Renta_Maquinaria.docx`](../Especificacion_Funcional_Software_Renta_Maquinaria.docx),
+y su texto extraído —legible y buscable sin abrir Word— en
+[`especificacion-funcional.md`](especificacion-funcional.md).
+
+> **Define 26 módulos, no 30.** La numeración llega a 30 pero M21, M22, M23 y M28 no existen.
 
 ---
 

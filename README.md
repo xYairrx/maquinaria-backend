@@ -105,10 +105,11 @@ El diseño completo vive en [`docs/`](docs/) y es la fuente de la verdad sobre e
 | [`README.md`](docs/README.md) | Resumen e invariantes del proyecto |
 | [`00-puesta-en-marcha.md`](docs/00-puesta-en-marcha.md) | Herramientas, versiones, Neon, problemas y soluciones |
 | [`01-arquitectura.md`](docs/01-arquitectura.md) | Stack, multi-tenancy, capas, auth, despliegue, contrato con el frontend |
-| [`02-modelo-datos.md`](docs/02-modelo-datos.md) | Las ~75 entidades de los 30 módulos y sus reglas |
+| [`02-modelo-datos.md`](docs/02-modelo-datos.md) | Las ~75 entidades de los 26 módulos y sus reglas |
+| [`especificacion-funcional.md`](docs/especificacion-funcional.md) | El texto de la especificación del negocio, extraído del `.docx` |
 | [`03-plan-desarrollo.md`](docs/03-plan-desarrollo.md) | Fases y orden de tareas |
 | [`04-pendientes.md`](docs/04-pendientes.md) | Decisiones abiertas y riesgos |
-| [`05-esquema-fase0.md`](docs/05-esquema-fase0.md) | DDL de las 15 tablas de Fase 0, aprovisionamiento, login, índices |
+| [`05-esquema-fase0.md`](docs/05-esquema-fase0.md) | DDL de las 19 tablas de Fase 0, aprovisionamiento, login, índices |
 
 > Los documentos son **especificación de diseño, no inventario**. Su checklist de avance ha estado por delante del código más de una vez; verifica siempre contra el repo.
 

@@ -1,6 +1,6 @@
 # Modelo de datos conceptual
 
-> Entidades y relaciones de los 30 módulos, a nivel conceptual (sin columnas de detalle).
+> Entidades y relaciones de los 26 módulos, a nivel conceptual (sin columnas de detalle).
 > El propósito es **no encajonarse**: identificar hoy las decisiones transversales que, si se descubren en la Fase 3, obligan a migrar la Fase 1.
 >
 > Total aproximado: **75 entidades**. Esto es un ERP vertical, no un CRUD.
@@ -120,14 +120,21 @@ El módulo 2 lista *"tarifas por hora, día, semana y mes"* como si fueran cuatr
 |---|---|
 | `Tenant` | Empresa suscrita. Razón social, RFC, subdominio, estado, zona horaria, moneda |
 | `Plan` | Básico / Profesional / Enterprise |
-| `PlanLimite` | Máximo de equipos, usuarios, almacenamiento GB, sucursales |
+| `Modulo` | Catálogo de los módulos del producto. **Es la unidad con la que se define un plan** |
+| `PlanModulo` | Qué módulos incluye cada plan. Llave compuesta, sin `id` propio |
+| `TipoLimite` | Catálogo de tipos de cupo: equipos, usuarios, sucursales, almacenamiento GB. Trae `valor_defecto` |
+| `TenantLimite` | El cupo **por empresa**. Tabla dispersa: solo excepciones al valor por defecto |
+| ~~`PlanLimite`~~ | **No existe.** Los cupos cuelgan del tenant, no del plan: un cliente que negocia 300 equipos con un plan de 200 no obliga a inventarle un plan a medida |
 | `Suscripcion` | Tenant + plan + vigencia + estado (prueba, activa, suspendida, cancelada) |
 | ~~`ConsumoTenant`~~ | **No es tabla, y no está en la Fase 0.** El consumo se *calcula*: almacenamiento con `SUM(archivo.tamano_bytes)`, usuarios y equipos contando filas. Una tabla de acumulados solo se justifica cuando esos conteos se vuelvan caros o cuando haya que facturar por consumo histórico |
-| `UsuarioPlataforma` | Superadministradores (nosotros). Tabla separada de `Usuario` a propósito |
+| `Usuario` | Superadministradores (nosotros). Tabla `usuario` de la base **central**, homónima y separada a propósito de la `usuario` de cada base de empresa |
+| `Auditoria` | La bitácora de la plataforma: altas y bajas de tenants, cambios de plan, movimientos de límites. **La misma entidad se usa en los dos contextos** — no tiene relaciones, así que no hay razón para duplicar la clase |
 
 ### Configuración y seguridad — M24, M25, auditoría
 
-`Sucursal`, `Patio`, `Usuario`, `Rol`, `Permiso`, `RolPermiso`, `UsuarioRol`, `Parametro`, `Auditoria`
+`Sucursal`, `Patio`, `Usuario`, `TokenAcceso`, `SesionRefresh`, `Rol`, `Permiso`, `RolPermiso`, `UsuarioRol`, `Parametro`, `Auditoria`
+
+> `Usuario` **no se borra**: vive en un `estado` (`Invitado`, `Activo`, `Suspendido`, `Baja`). Y `Rol` lleva dos banderas distintas: `es_sistema`, que solo impide borrarlo, y `acceso_total`, que salta la verificación de permisos y va únicamente en `administrador`.
 
 > **No existe una entidad `Empresa` aparte.** Los datos de la empresa —razón social, RFC, zona horaria, moneda— viven en `Tenant`. Son la misma cosa vista desde dos ángulos: `Tenant` es "el cliente que nos paga la suscripción" y también "la empresa cuya operación administra el sistema". Separarlas obligaría a mantener dos tablas 1:1 con los mismos campos.
 

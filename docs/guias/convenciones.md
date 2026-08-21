@@ -40,7 +40,7 @@ Aplicacion/
 └── Mantenimiento/
 ```
 
-Con 30 módulos previstos, carpetas `Services/`, `Repositories/` y `Validators/` se vuelven inmanejables. Feature folders mantienen junto lo que cambia junto.
+Con 26 módulos previstos, carpetas `Services/`, `Repositories/` y `Validators/` se vuelven inmanejables. Feature folders mantienen junto lo que cambia junto.
 
 ### Sin MediatR
 

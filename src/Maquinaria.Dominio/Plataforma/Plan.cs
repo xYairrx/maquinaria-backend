@@ -40,8 +40,12 @@ public class Plan
     public DateTime CreadoEn { get; set; }
 
     /// <summary>
+    /// LOS MODULOS SON LA DEFINICION DEL PLAN. Lo que se vende es el conjunto de
+    /// modulos habilitados, no un paquete de cupos: los cupos cuelgan del tenant,
+    /// en <see cref="TenantLimite"/>.
+    ///
     /// Solo get: nadie puede reemplazar la coleccion completa desde fuera, solo
     /// agregar y quitar. EF Core la puebla igual.
     /// </summary>
-    public ICollection<PlanLimite> Limites { get; } = [];
+    public ICollection<PlanModulo> Modulos { get; } = [];
 }

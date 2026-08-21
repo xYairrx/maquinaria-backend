@@ -9,7 +9,7 @@ El sistema usa **una base de datos por empresa**, todas en el mismo proyecto de 
 ```mermaid
 graph LR
     API[Maquinaria.Api]
-    API -->|cadena fija| C[(Base central<br/>tenant, plan, plan_limite<br/>suscripcion, usuario_plataforma)]
+    API -->|cadena fija| C[(Base central<br/>tenant, tenant_limite, plan<br/>modulo, plan_modulo, tipo_limite<br/>suscripcion, usuario, auditoria)]
     API -->|cadena resuelta<br/>por peticion| E1[(maquinaria_bajio<br/>usuario, equipos<br/>clientes, rentas...)]
     API --> E2[(maquinaria_norte<br/>usuario, equipos<br/>clientes, rentas...)]
     API --> E3[(maquinaria_...)]

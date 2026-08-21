@@ -89,4 +89,14 @@ public class Tenant
     public DateTime? EliminadoEn { get; set; }
 
     public ICollection<Suscripcion> Suscripciones { get; } = [];
+
+    /// <summary>
+    /// Cupos de ESTA empresa. Coleccion DISPERSA: solo trae los limites que se le
+    /// fijaron como excepcion. Vacia es lo normal y significa que hereda
+    /// <see cref="TipoLimite.ValorDefecto"/> en todos, que arranca en ilimitado.
+    ///
+    /// No confundir con los modulos: esos los define el plan que contrato, via
+    /// <see cref="Suscripcion"/> y <see cref="PlanModulo"/>.
+    /// </summary>
+    public ICollection<TenantLimite> Limites { get; } = [];
 }

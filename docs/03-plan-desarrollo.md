@@ -10,7 +10,7 @@ Cada módulo se termina **de punta a punta** antes de pasar al siguiente:
 Entidad → Migración → Caso de uso → Endpoint → Pruebas → Pantalla Angular → Funciona
 ```
 
-**No** "todo el backend y luego todo el frontend". Con 30 módulos, esa separación significa seis meses sin nada demostrable, y descubrir en el mes siete que la API no da lo que la pantalla necesita.
+**No** "todo el backend y luego todo el frontend". Con 26 módulos, esa separación significa seis meses sin nada demostrable, y descubrir en el mes siete que la API no da lo que la pantalla necesita.
 
 Cada rebanada terminada es software que se puede mostrar y usar.
 
@@ -26,7 +26,7 @@ Sin esto, todo lo demás se construye sobre arena. Es la fase más importante y 
 
 - Scaffolding de la solución .NET y del workspace Angular
 - Neon: base central creada, verificado que permite `CREATE DATABASE`, extensiones disponibles
-- Entidades de plataforma: `Tenant`, `Plan`, `PlanLimite`, `Suscripcion`
+- Entidades de plataforma: `Tenant`, `TenantLimite`, `Plan`, `Modulo`, `PlanModulo`, `TipoLimite`, `Suscripcion`, `Usuario`
 - Multi-tenancy: `ContextoCentral` y `ContextoEmpresa`, resolución de conexión por empresa, **aprovisionamiento automático** (`CREATE DATABASE` + migraciones + semillas)
 - Auth: JWT + refresh, matriz de permisos, semilla de los 9 roles
 - Interceptor de auditoría
@@ -73,14 +73,14 @@ Predicción de fallas, pricing dinámico, recomendaciones, analítica avanzada. 
 
 ## 3. Sobre el tamaño real de esto
 
-Conviene decirlo con claridad: **75 entidades y 30 módulos es un ERP vertical.** Comparable en alcance a un sistema como Odoo o SAP Business One en su nicho.
+Conviene decirlo con claridad: **~75 entidades y 26 módulos es un ERP vertical.** Comparable en alcance a un sistema como Odoo o SAP Business One en su nicho.
 
 Las Fases 0 y 1 son el hito que importa — producen un producto vendible. Las fases 2 a 4 son donde vive la mayor parte del trabajo. La 5 y la 6 son diferenciación.
 
 Dos consecuencias prácticas:
 
 1. **La Fase 1 debe cerrarse y ponerse frente a un cliente real antes de empezar la Fase 2.** El documento tiene huecos importantes (ver `04-pendientes.md`) que solo el uso real resuelve. Construir las seis fases antes del primer usuario es la forma más eficiente de construir seis fases equivocadas.
-2. **No hay que empezar los 30 módulos.** Hay que terminar 8 y venderlos.
+2. **No hay que empezar los 26 módulos.** Hay que terminar los de la Fase 1 y venderlos.
 
 ---
 

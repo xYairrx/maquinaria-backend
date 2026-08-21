@@ -9,6 +9,12 @@
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="EFCore.NamingConventions" />
+    <PackageReference Include="Microsoft.AspNetCore.Cryptography.KeyDerivation" />
+    <!-- Cache de la resolucion de tenants. Sin esto, cada peticion costaria tres
+         consultas extra contra la base central. -->
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
+    <!-- Emite los JWT. La VALIDACION vive en Api, con JwtBearer. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
   </ItemGroup>
 
   <ItemGroup>

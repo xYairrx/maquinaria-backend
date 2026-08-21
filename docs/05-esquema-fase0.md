@@ -1,7 +1,7 @@
 # Esquema de base de datos — Fase 0 (Fundación)
 
 > Modelo **multi-database**: una base central y una base por empresa.
-> 5 tablas centrales + 10 tablas por empresa.
+> 9 tablas centrales + 10 tablas por empresa. **Las 19 están construidas y aplicadas.**
 > Todo lo demás (equipos, clientes, rentas…) es Fase 1 y vive en la base de la empresa.
 
 **Este archivo es un documento de diseño, no la fuente de la verdad.** Trabajamos *Code-First*: la verdad son las clases de C#, y las migraciones de EF Core generan el DDL. El SQL de abajo existe para razonar el diseño y para las partes que EF Core no sabe expresar (extensiones, constraints `EXCLUDE`, índices parciales).
@@ -86,23 +86,102 @@ CREATE TABLE plan (
 
 Un plan retirado se marca inactivo, no se borra: hay suscripciones históricas que lo referencian.
 
-### `plan_limite`
+### `modulo` y `plan_modulo` — el plan es un conjunto de módulos
+
+**Un plan no es un paquete de cupos, es un conjunto de módulos habilitados.** Los cupos cuelgan del tenant, en `tenant_limite`.
 
 ```sql
-CREATE TABLE plan_limite (
-    id      uuid PRIMARY KEY,
-    plan_id uuid NOT NULL REFERENCES plan(id) ON DELETE CASCADE,
-    clave   text NOT NULL,   -- max_equipos, max_usuarios, max_sucursales, max_almacenamiento_gb
-    valor   int  NOT NULL,   -- -1 = ilimitado
+CREATE TABLE modulo (
+    id          uuid     PRIMARY KEY,
+    clave       text     NOT NULL,   -- 'logistica'  -> casa con permiso.modulo
+    numero      smallint NOT NULL,   -- 8            -> el M8 del documento funcional
+    nombre      text     NOT NULL,
+    descripcion text     NULL,
+    orden       int      NOT NULL,
+    activo      boolean  NOT NULL,
 
-    CONSTRAINT plan_limite_unico UNIQUE (plan_id, clave),
-    CONSTRAINT plan_limite_valor CHECK (valor >= -1)
+    CONSTRAINT modulo_clave_unica  UNIQUE (clave),
+    CONSTRAINT modulo_numero_unico UNIQUE (numero),
+    CONSTRAINT modulo_numero_rango CHECK (numero BETWEEN 1 AND 99)
+);
+
+CREATE TABLE plan_modulo (
+    plan_id   uuid NOT NULL REFERENCES plan(id) ON DELETE CASCADE,
+    modulo_id uuid NOT NULL REFERENCES modulo(id),   -- RESTRICT
+
+    PRIMARY KEY (plan_id, modulo_id)
 );
 ```
 
-**Por qué clave/valor y no columnas.** Agregar un límite nuevo no requiere migración ni desplegar. El costo es perder verificación de tipos: nada impide escribir `max_equipoz`. Se compensa con una clase de constantes en C# que sea el único lugar donde se escriben esas cadenas.
+`modulo` es un **catálogo de código**, igual que `permiso`: existe porque hay pantallas y endpoints que lo implementan, no porque un cliente lo invente. Se siembra por migración desde `ClavesModulo`.
 
-Es un intercambio que **solo vale la pena en tablas de configuración**. En tablas de negocio, clave/valor es un antipatrón.
+`plan_modulo` va **sin `id` propio**, con llave compuesta, igual que `rol_permiso` y `usuario_rol`: nadie referencia una fila de esta tabla.
+
+`numero` está separado de `orden` a propósito: el orden de presentación es una decisión comercial que puede cambiar, mientras que el número es la referencia estable al documento funcional y no cambia nunca.
+
+**La consecuencia importante es de autorización.** Con los módulos definiendo el plan, hay dos compuertas en dos bases distintas:
+
+```
+¿el plan del tenant incluye 'logistica'?      -> central          (plan_modulo)
+¿el rol del usuario tiene 'logistica.crear'?  -> base de empresa  (rol_permiso)
+```
+
+Y `permiso.modulo` es `text` en la base de la empresa, así que su relación con `modulo.clave` **no puede tener FK**: son bases separadas. Es una referencia blanda, y si alguien renombra una clave la compuerta deja de cerrar sin que nada truene. Dos consecuencias para el código:
+
+- Los módulos contratados se resuelven **una vez, al iniciar sesión**, junto con `nombre_bd`, y viajan en el JWT o en caché. No se consulta la central en cada petición.
+- Hace falta una **prueba en CI** que verifique que todo `permiso.modulo` sembrado existe como `modulo.clave`. Mismo criterio que la prueba de huérfanos de `evidencia`.
+
+**Y una consecuencia de producto:** como el plan *es* su conjunto de módulos, un cliente que quiera un módulo extra necesita otro plan. Si ese caso se vuelve común hará falta un `tenant_modulo` de excepción, espejo de `tenant_limite`. Se deja fuera hasta que aparezca el caso real.
+
+**El catálogo tiene los 26 módulos** que define la especificación funcional, sembrados en dos pasos: 18 en `CentralSemillaCatalogos` y los 8 restantes en `CentralModulosCompletos`, cuando el `.docx` entró al repositorio.
+
+> **Son 26, no 30.** El documento numera hasta 30 pero salta el 21, 22, 23 y 28. Y cuatro nombres se corrigieron en esa segunda migración: M24 es *Sucursales y patios* (no "Configuración"), M25 *Usuarios y permisos*, M27 *Reportes*, y M29 ***QR de equipos*** — este último se había sembrado como "Campo" por el nombre de la Fase 5, cuando la PWA de campo es una fase, no un módulo.
+
+### `tipo_limite` y `tenant_limite` — los cupos cuelgan del tenant
+
+```sql
+CREATE TABLE tipo_limite (
+    id            uuid    PRIMARY KEY,
+    clave         text    NOT NULL,   -- max_equipos, max_usuarios, max_sucursales, max_almacenamiento_gb
+    nombre        text    NOT NULL,   -- 'Equipos'  -> comparador de planes
+    descripcion   text    NOT NULL,
+    unidad        text    NOT NULL,   -- 'equipos' | 'usuarios' | 'GB'
+    valor_defecto int     NOT NULL,   -- -1 = ilimitado
+    orden         int     NOT NULL,
+    activo        boolean NOT NULL,
+
+    CONSTRAINT tipo_limite_clave_unica UNIQUE (clave),
+    CONSTRAINT tipo_limite_defecto     CHECK (valor_defecto >= -1)
+);
+
+CREATE TABLE tenant_limite (
+    id             uuid PRIMARY KEY,
+    tenant_id      uuid NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
+    tipo_limite_id uuid NOT NULL REFERENCES tipo_limite(id),   -- RESTRICT
+    valor          int  NOT NULL,
+
+    CONSTRAINT tenant_limite_unico UNIQUE (tenant_id, tipo_limite_id),
+    CONSTRAINT tenant_limite_valor CHECK (valor >= -1)
+);
+```
+
+**Por qué sobre el tenant y no sobre el plan.** Un cliente que negocia 300 equipos con un plan de 200 obligaría a inventarle un plan a medida, y eso ensucia el catálogo comercial que se muestra al comparar. Separando *qué módulos* (plan) de *cuánto* (tenant), cada cosa cambia sin arrastrar a la otra.
+
+**`tenant_limite` es dispersa a propósito:** solo guarda excepciones. Un tenant sin filas hereda `tipo_limite.valor_defecto`, que arranca en `-1`. Así el alta de una empresa no inserta ni una fila y nadie queda limitado por omisión. La cadena de resolución tiene dos niveles, no tres:
+
+```
+tenant_limite.valor  ->  tipo_limite.valor_defecto
+```
+
+`valor = 0` es válido y significa "no puede crear ninguno". Es **distinto** de no tener fila, que significa "usa el valor por defecto".
+
+**Por qué el catálogo `tipo_limite` y no `clave` como texto libre.** Con texto libre, nada impide escribir `max_equipoz` y que el límite no se aplique nunca, en silencio. Con catálogo, la integridad la da el motor. Es el mismo criterio que `permiso`: la clave la define el código, pero vive en una tabla.
+
+**Ojo con lo que el catálogo NO da.** Que el tipo de límite sea una fila no hace que un límite nuevo funcione sin desplegar: un límite solo acota cuando existe código que lo lee y bloquea la operación. `ClavesLimite` sigue siendo la fuente de la verdad y la semilla se genera desde ahí.
+
+**Ni `valor_defecto` ni `activo` llevan `DEFAULT` en la base, y no es un olvido.** Con un `DEFAULT -1`, EF Core omitiría la columna al insertar un tipo con `ValorDefecto = 0` —0 es el valor sentinel de `int`— y un límite que quiso decir "cero permitido" se guardaría como ilimitado. Es la misma trampa que dejó `plan.activo` sin `DEFAULT`. El precio es que todo `INSERT` en SQL crudo debe darles valor.
+
+**Y una advertencia para cuando se escriba la verificación:** el límite vive en la base **central** y el consumo vive en la base de la **empresa** —contar equipos, contar usuarios, `SUM(archivo.tamano_bytes)`—. No hay tabla de acumulados y no hay transacción que abarque las dos bases. Los límites del tenant se resuelven una vez, junto con `nombre_bd`, no en cada petición.
 
 ### `tenant` — el catálogo de empresas
 
@@ -177,23 +256,29 @@ Lo valioso es que lo garantiza el motor. Dos peticiones simultáneas no pueden c
 
 > **Dos columnas, no una columna `tstzrange`.** El tipo de rango solo se mapea en C# con `NpgsqlRange<T>`, de la librería Npgsql — y `Maquinaria.Dominio` no depende de infraestructura. Los constraints `EXCLUDE` aceptan **expresiones**, así que `tstzrange(inicio, fin)` es equivalente y deja el dominio limpio. Mismo criterio para `ocupacion_equipo` en la Fase 1.
 
-### `usuario_plataforma` — superadmins (nosotros)
+### `auditoria` — la bitácora de la plataforma
+
+Misma tabla y misma entidad que la de la base de empresa: está documentada en §4. Hace falta **también aquí** porque dar de alta un tenant, suspenderlo, cambiarle el plan o moverle un `tenant_limite` ocurre solo en la central, y son las decisiones más privilegiadas del sistema. Sin esta tabla no quedaban registradas en ninguna parte.
+
+### `usuario` — superadmins (nosotros)
 
 ```sql
-CREATE TABLE usuario_plataforma (
+CREATE TABLE usuario (
     id               uuid        PRIMARY KEY,
     correo           text        NOT NULL,
     hash_contrasena  text        NOT NULL,
     nombre           text        NOT NULL,
-    activo           boolean     NOT NULL DEFAULT true,
+    activo           boolean     NOT NULL,
     ultimo_acceso_en timestamptz NULL,
     creado_en        timestamptz NOT NULL DEFAULT now(),
 
-    CONSTRAINT usuario_plataforma_correo_unico UNIQUE (correo)
+    CONSTRAINT usuario_correo_unico UNIQUE (correo)
 );
 ```
 
 Con el modelo multi-database la separación es más natural que antes: los superadministradores viven en la base central y **no existen en ninguna base de empresa**. No hay forma de que un error de permisos dentro de una empresa alcance la plataforma.
+
+**Homónima de la `usuario` de la base de empresa, a propósito.** Son la misma idea en dos mundos separados físicamente, y no hay colisión posible en SQL porque son bases distintas. En C# las distingue el *namespace*, y confundirlas no compila: cada una existe solo en su propio `DbContext`, así que pedirle un `DbSet<Plataforma.Usuario>` a `ContextoEmpresa` es un error de compilación, no un bug en producción.
 
 ---
 
@@ -201,30 +286,47 @@ Con el modelo multi-database la separación es más natural que antes: los super
 
 Estas 10 tablas se crean en **cada** base de empresa. Ninguna lleva `tenant_id`: la base entera es de un solo cliente.
 
+**Las 10 están construidas y aplicadas en `maquinaria_plantilla`**, en tres migraciones: primero las 7 de autenticación y permisos, luego su semilla, y por último `parametro`, `archivo` y `auditoria`. El *append-only* no obliga a un solo golpe: obliga a no reescribir.
+
 ### `usuario`
 
 ```sql
 CREATE TABLE usuario (
     id                      uuid        PRIMARY KEY,
     correo                  text        NOT NULL,   -- normalizado a minusculas al escribir
-    hash_contrasena         text        NULL,       -- NULL mientras la invitacion no se acepta
+    hash_contrasena         text        NULL,       -- NULL mientras el estado es Invitado
     nombre                  text        NOT NULL,
     apellidos               text        NULL,
     telefono                text        NULL,
-    activo                  boolean     NOT NULL DEFAULT true,
-    debe_cambiar_contrasena boolean     NOT NULL DEFAULT false,
+    estado                  smallint    NOT NULL,   -- 1 Invitado | 2 Activo | 3 Suspendido | 4 Baja
+    debe_cambiar_contrasena boolean     NOT NULL,
     ultimo_acceso_en        timestamptz NULL,
     creado_en               timestamptz NOT NULL DEFAULT now(),
     actualizado_en          timestamptz NULL,
-    eliminado_en            timestamptz NULL,
 
-    CONSTRAINT usuario_correo_unico UNIQUE (correo)
+    CONSTRAINT usuario_correo_unico UNIQUE (correo),
+    CONSTRAINT usuario_estado       CHECK (estado BETWEEN 1 AND 4)
 );
 ```
 
-**`UNIQUE (correo)` a secas.** Con base compartida esto tenía que ser `(tenant_id, correo)` para permitir que la misma persona trabajara en dos empresas. Con base por empresa el problema desaparece solo: son bases distintas, así que el mismo correo puede existir en varias sin conflicto y sin complicar la restricción.
+**Los usuarios NO SE BORRAN: viven en un estado.** Por eso aquí no hay `activo` ni `eliminado_en`. El par original permitía cuatro combinaciones de las que dos eran basura —`activo` con `eliminado_en` puesto, e inactivo sin él, que no distinguía *por qué* no estaba activo—. Un solo `estado` las colapsa:
 
-**`hash_contrasena` es nullable** porque no hay registro público: los usuarios se crean por invitación. Entre que se crea la cuenta y la persona define su contraseña, la fila existe sin hash. Un usuario en ese estado no puede iniciar sesión.
+| valor | estado | ¿entra? | quién lo pone |
+|---|---|---|---|
+| 1 | `Invitado` | no | el alta. Sin contraseña, invitación vigente |
+| 2 | `Activo` | **sí** | la persona, al aceptar la invitación |
+| 3 | `Suspendido` | no | el administrador. Reversible |
+| 4 | `Baja` | no | el administrador. No reversible |
+
+Arranca en 1 y no en 0 por la misma convención que `EstadoTenant`: un enum de C# vale 0 por defecto, así que el 0 es detectablemente inválido y el `CHECK` lo hace cumplir Postgres.
+
+`Invitado` explícito quita una inferencia frágil. Antes, "sin contraseña" se deducía de `hash_contrasena IS NULL`; ahora el login comprueba **un solo campo** en lugar de dos columnas y un hash.
+
+**`hash_contrasena` sigue nullable** porque no hay registro público: los usuarios se crean por invitación, y entre que se crea la cuenta y la persona define su contraseña la fila existe sin hash.
+
+**`UNIQUE (correo)` global, no parcial por estado.** Con base compartida esto tenía que ser `(tenant_id, correo)`; con base por empresa el problema desaparece solo. Pero como los usuarios no se borran, tiene una consecuencia que hay que aceptar a ojos abiertos: **un correo nunca se libera.** Si `ventas@empresa.com` fue de alguien que se dio de baja, no se le puede asignar a quien lo sustituya.
+
+La alternativa —único solo entre los que no están de baja— volvería ambiguo el login: buscar por correo devolvería varias filas y habría que filtrar por estado *antes* de validar, y ese filtro, olvidado una vez, es un agujero de autenticación. Se queda global, y es regla escrita que los correos no se reciclan.
 
 El correo se normaliza a minúsculas **al escribir**, en la capa de aplicación. Es más simple y portable que `citext` o un índice sobre `lower(correo)`, y evita que `Juan@x.com` y `juan@x.com` sean dos cuentas.
 
@@ -287,20 +389,59 @@ Las 6 acciones: `consultar`, `crear`, `editar`, `eliminar`, `autorizar`, `export
 
 ```sql
 CREATE TABLE rol (
-    id          uuid        PRIMARY KEY,
-    codigo      text        NOT NULL,
-    nombre      text        NOT NULL,
-    descripcion text        NULL,
-    es_sistema  boolean     NOT NULL DEFAULT false,
-    creado_en   timestamptz NOT NULL DEFAULT now(),
+    id           uuid        PRIMARY KEY,
+    codigo       text        NOT NULL,
+    nombre       text        NOT NULL,
+    descripcion  text        NULL,
+    es_sistema   boolean     NOT NULL,   -- sembrado: no se puede borrar
+    acceso_total boolean     NOT NULL,   -- salta la verificacion de permisos
+    creado_en    timestamptz NOT NULL DEFAULT now(),
 
     CONSTRAINT rol_codigo_unico UNIQUE (codigo)
 );
+
+-- Como maximo UNA fila con acceso_total: todas valen lo mismo, asi que el
+-- unico parcial las limita a una. Impide crear un segundo rol privilegiado.
+CREATE UNIQUE INDEX rol_acceso_total_unico ON rol (acceso_total) WHERE acceso_total;
 ```
 
 Los 9 roles del módulo 25 —administrador, dirección, ventas, rentas, logística, taller, operador, cobranza, cliente— son una **semilla que se aplica al aprovisionar la base**, no un enum fijo. Cada empresa los renombra y ajusta: en una, "ventas" cotiza y autoriza; en otra, solo cotiza.
 
-`es_sistema = true` marca los roles semilla, para impedir borrar el rol administrador y dejar la empresa sin acceso.
+#### Las dos banderas, y por qué son dos
+
+`es_sistema = true` marca los **nueve** roles semilla e impide borrarlos. Por sí sola **no concede nada**.
+
+`acceso_total = true` es lo que hace que un rol **salte la verificación de permisos**, y va solo en `administrador`. Tienen que ser dos columnas: si `es_sistema` significara también "salta la verificación", los nueve la saltarían —ventas, operador y cliente incluidos— y la empresa quedaría abierta de par en par.
+
+**Es una columna y no una comparación contra `codigo = 'administrador'`** porque las empresas renombran los roles. Si la verificación preguntara por la cadena, un rename legítimo dejaría a la empresa sin quién administre; y al revés, peor: alguien crearía un rol llamado `administrador` y se ganaría el poder sin que nadie se lo conceda.
+
+#### El rol con acceso total es inmutable, y lo garantiza el motor
+
+```sql
+CREATE FUNCTION rol_proteger_sistema() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION
+        'el rol de sistema con acceso total no se puede modificar ni borrar';
+END $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER rol_sistema_inmutable
+    BEFORE UPDATE OR DELETE ON rol
+    FOR EACH ROW
+    WHEN (OLD.es_sistema AND OLD.acceso_total)
+    EXECUTE FUNCTION rol_proteger_sistema();
+```
+
+Ese rol no se puede editar, borrar, ni apagarle el acceso. Y como no se puede apagar, la regla *"debe quedar al menos un rol con acceso total"* **se cumple sola**, sin necesidad de un constraint diferido que la vigile.
+
+El `WHEN` apunta a `es_sistema AND acceso_total`, no a `es_sistema` solo: los otros ocho lo traen y tienen que seguir siendo renombrables. Y solo referencia `OLD`, porque un trigger `BEFORE DELETE` no tiene `NEW`.
+
+Esto no protege de un superusuario de Postgres. Sí protege de la aplicación, de un `ExecuteUpdate` distraído y del administrador de la empresa, que son los tres casos reales.
+
+#### La contrapartida, asumida
+
+El rol `administrador` **no aparece en la interfaz de asignaciones**: se otorga solo al aprovisionar la empresa. Eso significa que **la empresa tiene exactamente una persona con acceso total**. Si esa persona se va o pierde el acceso, nadie dentro de la empresa puede nombrar a otra — solo la plataforma, desde el panel de superadministrador.
+
+Esa operación de recuperación tiene que existir, y se audita con `origen = 'plataforma'`.
 
 ### `rol_permiso` y `usuario_rol`
 
@@ -393,25 +534,124 @@ CREATE TABLE parametro (
 
 ### `auditoria`
 
+> **Va en la SEGUNDA migración de `ContextoEmpresa`, no en la primera.** No participa en el login ni en la autorización, no tiene ni una FK, y hay una dependencia en el otro sentido: el interceptor no se puede escribir antes que la auth, porque necesita `usuario_id`, `roles`, `ip` y `origen`, que salen del contexto de la petición autenticada. La tabla sin interceptor no sirve de nada.
+>
+> **Y también hace falta en la base CENTRAL.** Dar de alta un tenant, suspenderlo, cambiarle el plan o moverle un `tenant_limite` ocurre solo allí, y hoy no queda registrado en ninguna parte. Son las decisiones más privilegiadas del sistema.
+
 ```sql
 CREATE TABLE auditoria (
-    id                 bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    usuario_id         uuid        NULL,
+    id                 bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    correlacion_id     uuid        NOT NULL,
     fecha_utc          timestamptz NOT NULL DEFAULT now(),
+
+    usuario_id         uuid        NULL,       -- sin FK, a proposito
+    usuario_correo     text        NULL,       -- congelado al escribir
+    roles              text[]      NOT NULL,   -- roles efectivos en ese momento
+    origen             text        NOT NULL,   -- 'api' | 'pwa' | 'plataforma' | 'sistema'
+    ip                 inet        NULL,
+
+    accion             smallint    NOT NULL,
     entidad            text        NOT NULL,
     entidad_id         text        NOT NULL,
-    accion             smallint    NOT NULL,   -- 1 Alta | 2 Cambio | 3 Baja
     valores_anteriores jsonb       NULL,
     valores_nuevos     jsonb       NULL,
-    ip                 inet        NULL,
-    origen             text        NULL        -- 'api' | 'pwa' | 'sistema'
+
+    CONSTRAINT auditoria_accion CHECK (accion BETWEEN 1 AND 8)
 );
 ```
 
-Dos rupturas deliberadas de las convenciones del proyecto:
+Rupturas deliberadas de las convenciones del proyecto:
 
-- **`bigint` identity en vez de uuid v7.** Es la única tabla de altísimo volumen a la que nunca apunta una FK. Un entero secuencial es más compacto y más rápido de insertar.
-- **Sin FK a `usuario`.** La auditoría debe sobrevivir al borrado de lo que audita. Además, cada FK es una verificación extra en cada insert, y esta tabla se escribe en cada operación.
+- **`bigint` identity en vez de uuid v7.** Es la única tabla de altísimo volumen a la que nunca apunta una FK. `GENERATED ALWAYS` y no `BY DEFAULT`: la aplicación **no puede suministrar un `id`**, así que no puede insertar en una posición arbitraria de la secuencia.
+- **Sin FK a `usuario`.** No es solo el costo de verificación en la tabla más escrita: `usuario_id` puede apuntar legítimamente a una fila que **no existe en esta base** —un superadministrador vive en la central—, así que una FK no sería cara, sería **incorrecta**.
+
+#### Los campos que el diseño original no tenía
+
+| campo | qué pregunta responde |
+|---|---|
+| `correlacion_id` | *¿qué se hizo en una sola acción?* Crear una renta escribe `renta`, `renta_linea` y `ocupacion_equipo`. Su alcance es **la operación, no el `SaveChanges`** — una petición puede guardar varias veces, y las acciones 4 a 8 no pasan por `SaveChanges` |
+| `usuario_correo` | *¿quién fue?* El correo puede cambiar, y para `origen = 'plataforma'` el `usuario_id` **nunca** va a resolver dentro de esta base |
+| `roles` | *¿por qué se le permitió?* Los roles y `rol_permiso` cambian, así que no se puede reconstruir después. `'administrador' = ANY(roles)` dice si pasó por el bypass |
+
+`correlacion_id` se genera **del lado del servidor**, una vez por unidad de trabajo, aunque el frontend mande un `X-Correlation-Id`: un id que viene del cliente es un id que el cliente puede repetir para atribuir sus filas al grupo de otra persona. El mismo valor va en el log estructurado, y es lo que permite cruzar una excepción técnica con las filas de auditoría de esa operación.
+
+#### Los ocho valores de `accion`
+
+```
+1 Alta   2 Cambio   3 Borrado    ← las escribe el interceptor
+4 Acceso                         ← consulto un expediente
+5 Denegado                       ← intento rechazado por permisos
+6 Exportacion                    ← se llevo datos
+7 Login   8 LoginFallido
+```
+
+Un interceptor de `SaveChanges` **solo ve escrituras**, así que 4 a 8 las escribe el caso de uso a mano. Una exportación no modifica ni una fila, y es justo lo que quieres saber que hizo alguien con acceso total.
+
+`3` se llama **`Borrado`** y no `Baja` a propósito: significa "la fila desapareció". La baja de un usuario es un cambio de estado, o sea `2 Cambio`; con el nombre viejo, dos cosas distintas compartían nombre en el campo que se consulta para saber qué pasó.
+
+`5 Denegado` casi nunca disparará para `administrador` —salta la verificación— y existe para los otros ocho roles.
+
+#### Lo que el interceptor NUNCA debe escribir
+
+`usuario.hash_contrasena`, `token_acceso.hash_token` y `sesion_refresh.hash_token`. Si el interceptor serializa la entidad completa, esos hashes acaban aquí, en claro, para siempre — en la tabla que nunca se borra. Esas columnas guardan hashes precisamente para que leer la base no dé material usable, y la auditoría lo desharía por la puerta de atrás.
+
+Hace falta una **lista de propiedades excluidas, declarativa**, y una prueba que falle cuando aparezca una propiedad nueva cuyo nombre huela a secreto (`hash`, `token`, `secreto`, `contrasena`) y no esté en la lista. Es lo único de la auditoría que, mal hecho, es peor que no tenerla.
+
+Van solo las propiedades **que cambiaron**, no la entidad completa: por tamaño, y porque un diff de 40 campos donde cambió uno es ilegible. El `ChangeTracker` ya sabe cuáles son. En un `Alta` no hay subconjunto, así que `valores_nuevos` lleva la entidad entera menos las exclusiones.
+
+#### Qué se audita, opt-in
+
+**Opt-in por entidad, nunca opt-out.** Con 75 entidades, opt-out significa que cada entidad nueva se audita por accidente o se olvida en silencio.
+
+| Se audita | No se audita | por qué no |
+|---|---|---|
+| `usuario`, `rol`, `rol_permiso`, `usuario_rol` | `sesion_refresh` | cada refresh sería una fila; el login ya se registra |
+| `token_acceso` (sin el hash), `parametro` | `auditoria` | recursión infinita |
+| Fase 1+: `renta`, `contrato`, `cotizacion`, `pago`, `tarifa` | `ocupacion_equipo` | derivada; se audita la renta que la causó |
+
+#### Append-only en el motor
+
+Con el administrador saltando la verificación, esta tabla es **el único** registro de lo que hizo. Un registro que el propio auditado puede borrar no es un registro.
+
+```sql
+CREATE FUNCTION auditoria_solo_insercion() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'auditoria es append-only: % rechazado', TG_OP;
+END $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER auditoria_inmutable
+    BEFORE UPDATE OR DELETE OR TRUNCATE ON auditoria
+    FOR EACH STATEMENT EXECUTE FUNCTION auditoria_solo_insercion();
+```
+
+**`TRUNCATE` va en la lista y no es redundante.** Un trigger de `UPDATE` y `DELETE` no lo intercepta, así que sin él un `TRUNCATE auditoria` vaciaría la bitácora entera sin despertar al trigger. Los triggers de `TRUNCATE` solo existen a nivel de sentencia, que es justo lo que este ya era.
+
+`FOR EACH STATEMENT` y no `FOR EACH ROW`: no hace falta inspeccionar filas para rechazar la sentencia completa, y así un `DELETE` de un millón de filas se rechaza una vez en lugar de un millón.
+
+#### La frontera con el log técnico
+
+No hay columna `nivel`. Son dos sistemas y mezclarlos arruina los dos:
+
+| | Auditoría | Log técnico |
+|---|---|---|
+| Registra | qué le pasó a los datos y quién lo hizo | errores, latencias, trazas |
+| Vive en | esta tabla | salida estándar → Railway |
+| Se borra | nunca | a las dos semanas |
+| Para | el cliente, un auditor | nosotros, depurando |
+
+> ¿Cambió datos, o alguien intentó algo y se le negó? → `auditoria`
+> ¿Falló por una razón técnica? → log estructurado
+
+Los fallos que **sí** son material de auditoría ya tienen su valor: `Denegado` y `LoginFallido`. Un 500 por una consulta lenta no es ninguno de los dos. Y la severidad para alertar es **derivada**, no capturada: sale de combinar `accion`, `roles` y `origen`.
+
+#### Fuera a propósito
+
+| Campo | Por qué no |
+|---|---|
+| `agente_usuario` | ya está en `sesion_refresh`, donde sirve para cerrar sesiones. Por fila de bitácora es ruido |
+| `exito boolean` | redundante: `Denegado` y `LoginFallido` ya lo dicen |
+| `motivo` / `comentario` | una bitácora registra hechos, no justificaciones. Si una acción necesita motivo, va en la entidad de negocio |
+| cadena de hash entre filas | volvería la bitácora a prueba de alguien **con acceso a la base**, a costa de serializar las escrituras. Si un cliente lo exige, se agrega entonces |
 
 `jsonb` en lugar de columnas fijas permite auditar cualquier entidad sin migrar el esquema:
 
@@ -525,16 +765,25 @@ CREATE INDEX ix_suscripcion_tenant ON suscripcion (tenant_id);
 Base de empresa:
 
 ```sql
-CREATE INDEX ix_usuario_activos        ON usuario (activo) WHERE eliminado_en IS NULL;
-CREATE INDEX ix_archivo_vigentes       ON archivo (creado_en DESC) WHERE eliminado_en IS NULL;
-CREATE INDEX ix_auditoria_fecha        ON auditoria (fecha_utc DESC);
-CREATE INDEX ix_auditoria_entidad      ON auditoria (entidad, entidad_id);
+CREATE INDEX ix_usuario_estado         ON usuario (estado);
+CREATE INDEX ix_permiso_modulo         ON permiso (modulo);
 CREATE INDEX ix_sesion_usuario_activa  ON sesion_refresh (usuario_id) WHERE revocado_en IS NULL;
 CREATE INDEX ix_token_acceso_pendiente ON token_acceso (usuario_id)
     WHERE usado_en IS NULL AND invalidado_en IS NULL;
+
+-- Segunda migracion, con auditoria
+CREATE INDEX ix_archivo_vigentes       ON archivo (creado_en DESC) WHERE eliminado_en IS NULL;
+CREATE INDEX ix_auditoria_fecha        ON auditoria (fecha_utc DESC);
+CREATE INDEX ix_auditoria_entidad      ON auditoria (entidad, entidad_id);
+CREATE INDEX ix_auditoria_usuario      ON auditoria (usuario_id, fecha_utc DESC);
+CREATE INDEX ix_auditoria_correlacion  ON auditoria (correlacion_id);
 ```
 
-Los índices **parciales** (`WHERE eliminado_en IS NULL`) son una ventaja de PostgreSQL que conviene explotar: con borrado lógico, casi todas las consultas quieren solo los registros vivos, y así el índice no carga con los borrados.
+Los índices **parciales** son una ventaja de PostgreSQL que conviene explotar: casi todas las consultas quieren solo los registros vigentes, y así el índice no carga con los demás.
+
+`ix_usuario_activos` desapareció al sustituir `activo` + `eliminado_en` por `estado`: un índice sobre `estado` responde lo mismo sin filtro. `ix_permiso_modulo` es nuevo, y se usa al resolver la intersección con los módulos del plan.
+
+**`eliminado_en` donde sigue existiendo —`tenant` y `archivo`— es baja lógica y nunca física: no hay `DELETE` en esas tablas.** En `archivo` además marca el momento en que dejó de existir el binario en R2, que es información que un estado no daría.
 
 Nótese que ya no hay que anteponer `tenant_id` a cada índice compuesto. Otra simplificación del modelo multi-database.
 
@@ -545,23 +794,37 @@ Nótese que ya no hay que anteponer `tenant_id` a cada índice compuesto. Otra s
 **`ContextoCentral`:**
 
 ```
-1. Extension               btree_gist (para el EXCLUDE de suscripcion)
-2. plan, plan_limite
-3. tenant
-4. suscripcion
-5. usuario_plataforma
-6. Semilla de planes
+CentralInicial            APLICADA
+  1. Extension            btree_gist (para el EXCLUDE de suscripcion)
+  2. plan, modulo, plan_modulo
+  3. tipo_limite
+  4. tenant, tenant_limite
+  5. suscripcion
+  6. usuario
+
+CentralSemillaCatalogos   APLICADA
+  7. Semillas             modulo (18 conocidos), tipo_limite, plan de arranque
+
+CentralAuditoria          APLICADA
+  8. auditoria + trigger  auditoria_inmutable
 ```
 
 **`ContextoEmpresa`** — se aplica a cada base nueva y a las existentes al desplegar:
 
 ```
-1. Extensiones             btree_gist, pg_trgm
-2. usuario
-3. permiso, rol, rol_permiso, usuario_rol
-4. token_acceso, sesion_refresh
-5. parametro, archivo, auditoria
-6. Semillas                permisos del sistema, los 9 roles y sus permisos por defecto
+EmpresaInicial            APLICADA en maquinaria_plantilla
+  1. Extensiones          btree_gist, pg_trgm
+  2. usuario
+  3. permiso, rol, rol_permiso, usuario_rol
+  4. token_acceso, sesion_refresh
+  5. Trigger              rol_sistema_inmutable
+
+EmpresaSemillaSeguridad   APLICADA
+  6. Semillas             108 permisos (18 modulos x 6 acciones) y los 9 roles
+
+EmpresaAuditoriaYConfiguracion   APLICADA
+  7. parametro, archivo, auditoria
+  8. Trigger              auditoria_inmutable
 ```
 
 Los pasos de extensiones y semillas son SQL crudo dentro de migraciones (`migrationBuilder.Sql(...)`), porque EF Core no sabe expresar extensiones ni datos semilla condicionales.

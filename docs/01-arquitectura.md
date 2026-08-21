@@ -32,10 +32,38 @@ Versiones verificadas el 2026-08-17: Angular CLI 22.1.4, SDK .NET 10.0.302.
 Modelo **multi-database**. Una base central con el catálogo de empresas, y **una base de datos independiente por cada empresa suscrita**, creada y migrada automáticamente al darla de alta.
 
 ```
-Base central              tenant, plan, plan_limite, suscripcion, usuario_plataforma
+Base central              tenant, tenant_limite, plan, modulo, plan_modulo,
+                          tipo_limite, suscripcion, usuario, auditoria
 Base maquinaria_bajio     usuario, equipos, clientes, rentas...
 Base maquinaria_norte     usuario, equipos, clientes, rentas...
 ```
+
+### 2.0 Cómo se resuelve la base de cada petición
+
+Tres piezas, y una garantía.
+
+```
+JWT (claim tenant) → MiddlewareTenant → IDirectorioTenants → IContextoTenant
+                                              │                     │
+                                        caché + central       ContextoEmpresa
+```
+
+| pieza | qué hace |
+|---|---|
+| `IDirectorioTenants` | resuelve slug o id → `TenantResuelto`, con **caché**. Una resolución cuesta tres lecturas: el tenant, sus límites propios y los módulos del plan de su suscripción vigente |
+| `MiddlewareTenant` | lee el claim `tenant` del JWT, resuelve, y verifica que la empresa **pueda operar** antes de dejar pasar |
+| `IContextoTenant` | portador de ámbito de petición. `ContextoEmpresa` se registra con un `optionsAction` que lo consulta |
+| `FabricaConexionesEmpresa` | el **único** lugar donde un `nombre_bd` se vuelve cadena de conexión, y por eso el único donde hay que validarlo |
+
+**La garantía: no existe una base por defecto.** `IContextoTenant.Actual` **lanza** si no hay empresa resuelta. Si un camino de código llega a abrir un `ContextoEmpresa` sin tenant, revienta ruidosamente en lugar de caer a la central, a la plantilla o a la última usada — cualquiera de esas tres sería una fuga entre clientes esperando a que alguien la encuentre. Reasignar el tenant a media petición también lanza.
+
+**Se verifica en cada petición, no solo en el login.** Suspender a un cliente tiene que surtir efecto sin esperar a que caduquen los tokens que ya se emitieron, así que `PuedeOperar` —estado comercial más aprovisionamiento `Lista`— se comprueba en el middleware. Lo que acota el desfase es el TTL de la caché: con varias instancias en Railway cada una tiene la suya, y la invalidación explícita solo alcanza a una.
+
+**Los tenants inexistentes no se cachean.** Cachear ausencias sería un camino para llenar la memoria del servidor pidiendo slugs al azar.
+
+**`nombre_bd` no sale del servidor.** No viaja en el JWT ni en ninguna respuesta: un JWT va firmado pero **no cifrado**, y los nombres de las bases de los clientes no son información para el navegador. El token lleva el id del tenant; el `nombre_bd` lo resuelve el servidor.
+
+**La aplicación necesita las DOS cadenas de conexión en tiempo de ejecución.** La *pooled* atiende peticiones; la *directa* la necesita el aprovisionamiento, porque `CREATE DATABASE` es DDL y el endpoint pooled corre PgBouncer en modo transacción y no lo admite. Hasta ahora `ConnectionStrings:Migraciones` solo se usaba en tiempo de diseño; el despliegue en Railway tiene que llevar ambas.
 
 ### 2.1 Por qué este modelo y no una base compartida
 
@@ -92,7 +120,7 @@ Tres detalles críticos de PostgreSQL, desarrollados en `05-esquema-fase0.md` §
 
 | Base | Contenido | Tablas |
 |---|---|---|
-| **Central** | El negocio del SaaS | `tenant`, `plan`, `plan_limite`, `suscripcion`, `usuario_plataforma` |
+| **Central** | El negocio del SaaS | `tenant`, `tenant_limite`, `plan`, `modulo`, `plan_modulo`, `tipo_limite`, `suscripcion`, `usuario`, `auditoria` |
 | **Empresa** | Todos los datos del cliente | Todo lo demás: usuarios, permisos, equipos, clientes, rentas… |
 
 **Los catálogos generales** —marcas, modelos, categorías de maquinaria— se **siembran** en cada base de empresa durante el aprovisionamiento, con el mismo contenido base. Cada empresa puede agregar los suyos sin afectar a nadie. Así una empresa nueva ve un catálogo poblado desde el primer minuto, que era la ventaja buscada, y sin compartir tabla con nadie.
@@ -136,7 +164,7 @@ Aplicacion/
 └── Mantenimiento/
 ```
 
-Con 30 módulos, carpetas `Services/`, `Repositories/`, `Validators/` se vuelven inmanejables. Feature folders mantienen junto lo que cambia junto.
+Con 26 módulos, carpetas `Services/`, `Repositories/`, `Validators/` se vuelven inmanejables. Feature folders mantienen junto lo que cambia junto.
 
 ---
 
@@ -169,7 +197,24 @@ Usuario ──< UsuarioRol >── Rol ──< RolPermiso >── Permiso
                                           "reportes.exportar"
 ```
 
-Los permisos son cadenas `modulo.accion`, se resuelven al iniciar sesión y viajan en el JWT (o se cachean por usuario si crecen demasiado para el token). En la API se validan con una policy `RequierePermiso("rentas.autorizar")`.
+Los permisos son cadenas `modulo.accion`, se resuelven al iniciar sesión y **viajan en el JWT**, con token de vida corta y refresh rotativo. Se descartó resolverlos por petición o cachearlos en el servidor: lo primero cuesta dos consultas por petición —una a la central— y lo segundo mete estado que se complica al escalar a varias instancias. El precio aceptado es que revocar un permiso tarda hasta la vigencia del token en surtir efecto. En la API se validan con una policy `RequierePermiso("rentas.autorizar")`.
+
+**El permiso efectivo es una intersección, no una lectura:** `permisos del rol ∩ módulos del plan del tenant`. Un usuario con `logistica.crear` en una empresa cuyo plan no incluye logística no puede crear un flete.
+
+### 6.1 Decisiones de autenticación
+
+| Tema | Decisión | Razón |
+|---|---|---|
+| Hashing | **PBKDF2-HMAC-SHA256**, 600 mil iteraciones, del paquete `Microsoft.AspNetCore.Cryptography.KeyDerivation` | Argon2id es la primera recomendación de OWASP, pero en .NET solo existe en paquetes de terceros, y una dependencia de criptografía de terceros es la categoría que más cuidado exige auditar. 600 mil iteraciones sigue siendo aceptable |
+| Formato del hash | Autodescriptivo: `pbkdf2-sha256$iteraciones$sal$clave` | Subir el costo no invalida ni un hash existente: los viejos se verifican con sus propios parámetros y se rehashean en el siguiente login, que es el único momento en que se tiene la contraseña en claro |
+| Firma | HMAC-SHA256 con llave simétrica de ≥32 bytes, desde secretos | El emisor y el validador son el mismo proceso. La llave nunca se commitea |
+| Audiencias | **Dos, separadas:** `maquinaria-plataforma` y `maquinaria-empresa` | No es cosmética: con una sola, un token de superadministrador serviría en un endpoint de empresa, porque los firma la misma llave. Cada endpoint exige la suya con una policy sobre el claim `ambito` |
+| Contenido del token | `sub`, `email`, `name`, `ambito`. **Nunca `nombre_bd`** | Un JWT va firmado pero **no cifrado**: cualquiera que lo tenga lee su contenido. Los nombres de las bases de los clientes no viajan al navegador |
+| Nombres de claim | Cortos (`sub`, `email`, `name`) y `MapInboundClaims = false` | Por defecto JwtBearer traduce los nombres estándar a los URIs de WS-Federation, así que el token dice `sub` y el código que lo lee no lo encuentra. Son además ~55 bytes de relleno por claim en cada petición |
+| Tolerancia de reloj | `ClockSkew = TimeSpan.Zero` | Los cinco minutos por defecto alargarían de más la vida de cada token, y aquí emisor y validador son el mismo proceso |
+| Límite de intentos | Por IP, con el limitador nativo de .NET | El limitador corre **antes** de leer el cuerpo, así que no puede particionar por correo. El límite por correo —y por slug, con el login de empresa— necesita estado y va en el caso de uso |
+| Respuesta al fallo | Un solo mensaje para las tres causas, y **tiempo constante** con hash señuelo | Distinguir "no existe el correo" de "contraseña incorrecta" regala la lista de cuentas. Y responder de inmediato cuando no existe, frente a ~130 ms cuando sí, es una diferencia medible que la revela igual |
+
 
 Cada tenant tiene sus propios roles: los 9 del documento son una **semilla** que se copia al crear el tenant, y luego cada empresa los ajusta. Un rol no es global.
 
@@ -210,6 +255,27 @@ public interface IAlmacenamientoArchivos
 
 Implementaciones: `AlmacenamientoDisco` (dev) y `AlmacenamientoS3` (prod, compatible con AWS S3, Cloudflare R2 y MinIO).
 
+### 8.1 Envío de correo
+
+Misma forma y misma razón: un cliente on-premise usará su propio SMTP, no el servicio que usemos nosotros.
+
+```csharp
+public interface IEnviadorCorreo
+{
+    Task<ResultadoEnvio> EnviarAsync(MensajeCorreo mensaje, CancellationToken ct);
+}
+```
+
+Implementaciones: `CorreoEnLog` (dev — escribe el mensaje en el log y no manda nada) y **`CorreoResend`** (nube). Se elige con `Correo:Proveedor`, igual que el almacenamiento.
+
+**Resend, con `HttpClient` tipado y sin paquete de NuGet.** La API que necesitamos es **un** endpoint —`POST /emails`— y un SDK de terceros para eso es una dependencia más que pinear, auditar y actualizar a cambio de ahorrar veinte líneas. Mismo criterio que descartó MediatR y un paquete de Argon2.
+
+**El resultado se devuelve, no se lanza.** `EnviarAsync` no tira excepción cuando falla, y eso es deliberado: si el aprovisionamiento creó la base, la migró, sembró los roles y creó al administrador, que el correo no salga **no puede** convertir todo eso en un fracaso. La operación que lo pidió decide qué hacer; en el alta de empresas, se registra un error y se reporta `invitacionEnviada: false`.
+
+**Limitación del sandbox de Resend, mientras el dominio no esté verificado:** solo acepta `onboarding@resend.dev` como remitente y solo entrega al correo del titular de la cuenta. No es un error de configuración. La verificación del dominio está pendiente junto con el registro del dominio (ver `maquinaria-frontend/docs/integracion-backend.md`).
+
+`Resend:Llave` va en secretos —user-secrets en desarrollo, variables de entorno en Railway— y nunca se commitea.
+
 Reglas:
 - **Rutas siempre prefijadas por tenant:** `{tenantId}/equipos/{equipoId}/inspecciones/{inspeccionId}/{archivoId}.jpg`. El prefijo hace trivial calcular consumo por tenant, aplicar cuotas y borrar todo al dar de baja una empresa.
 - Los archivos **nunca** se sirven a través de la API. Se entregan URLs firmadas con vigencia corta, para no pasar los bytes por el servidor de aplicación.
@@ -220,7 +286,7 @@ Reglas:
 ## 9. Frontend
 
 - **Standalone components** y `signals` para estado local; sin NgRx hasta que haya evidencia de que se necesita.
-- **Lazy loading por módulo de ruta.** Con 30 módulos, un bundle único es inviable.
+- **Lazy loading por módulo de ruta.** Con 26 módulos, un bundle único es inviable.
 - **Cliente HTTP generado** desde el OpenAPI del backend, para que un cambio de contrato rompa la compilación del front en lugar de romper producción.
 - **Interceptores:** JWT, refresh automático, manejo de errores, `tenant`.
 - **PWA con soporte offline** en Fase 5 (módulo de campo). Se diseña desde el inicio con esto en mente: las inspecciones deben poder capturarse sin red y sincronizarse después, lo que implica IDs generados en el cliente (de ahí uuid v7) y resolución de conflictos.

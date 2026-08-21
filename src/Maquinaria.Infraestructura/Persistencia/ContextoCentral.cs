@@ -1,4 +1,5 @@
 ﻿using Maquinaria.Dominio.Plataforma;
+using Maquinaria.Dominio.Trazabilidad;
 using Maquinaria.Infraestructura.Persistencia.Configuraciones.Central;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,13 +21,35 @@ public class ContextoCentral : DbContext
 
     public DbSet<Plan> Planes => Set<Plan>();
 
-    public DbSet<PlanLimite> PlanLimites => Set<PlanLimite>();
+    /// <summary>Catalogo de modulos. Un plan es un conjunto de estos.</summary>
+    public DbSet<Modulo> Modulos => Set<Modulo>();
+
+    /// <summary>La composicion de cada plan: que modulos incluye.</summary>
+    public DbSet<PlanModulo> PlanModulos => Set<PlanModulo>();
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
 
+    /// <summary>Catalogo de tipos de limite, con su valor por defecto.</summary>
+    public DbSet<TipoLimite> TiposLimite => Set<TipoLimite>();
+
+    /// <summary>Cupos por empresa. Dispersa: solo excepciones al valor por defecto.</summary>
+    public DbSet<TenantLimite> TenantLimites => Set<TenantLimite>();
+
     public DbSet<Suscripcion> Suscripciones => Set<Suscripcion>();
 
-    public DbSet<UsuarioPlataforma> UsuariosPlataforma => Set<UsuarioPlataforma>();
+    /// <summary>
+    /// Superadministradores. Homonima de la entidad Usuario de la base de empresa
+    /// a proposito: son la misma idea en dos mundos separados fisicamente, y cada
+    /// una existe solo en su propio contexto.
+    /// </summary>
+    public DbSet<Usuario> Usuarios => Set<Usuario>();
+
+    /// <summary>
+    /// La bitacora de la PLATAFORMA: altas y bajas de tenants, cambios de plan,
+    /// movimientos de limites. Son las decisiones mas privilegiadas del sistema y
+    /// hasta ahora no quedaban registradas en ninguna parte.
+    /// </summary>
+    public DbSet<Auditoria> Auditorias => Set<Auditoria>();
 
     protected override void OnModelCreating(ModelBuilder modelo)
     {

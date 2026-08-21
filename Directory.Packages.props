@@ -23,6 +23,17 @@
     <PackageVersion Include="Microsoft.OpenApi" Version="2.12.0" />
   </ItemGroup>
 
+  <!-- Autenticacion. PBKDF2 viene del paquete de KeyDerivation de Microsoft, que
+       es pequeno y no arrastra todo ASP.NET Identity; se eligio sobre Argon2id para
+       no depender de criptografia de terceros. JwtBearer valida los tokens que emite
+       Infraestructura, y arrastra Microsoft.IdentityModel.* -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.AspNetCore.Cryptography.KeyDerivation" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.11" />
+  </ItemGroup>
+
   <!-- Pruebas -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

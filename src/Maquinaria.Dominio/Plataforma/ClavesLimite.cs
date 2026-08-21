@@ -1,7 +1,7 @@
 ﻿namespace Maquinaria.Dominio.Plataforma;
 
 /// <summary>
-/// El unico lugar donde se escriben las claves de <see cref="PlanLimite"/>.
+/// El unico lugar donde se escriben las claves de <see cref="TipoLimite"/>.
 ///
 /// No es opcional: es lo que recupera la verificacion de tipos que el formato
 /// clave/valor pierde. Sin esta clase, un "max_equipoz" mal escrito compila,

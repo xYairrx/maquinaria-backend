@@ -32,7 +32,7 @@
 - [ ] Auth completo: login por empresa/correo/contraseña, JWT, refresh rotativo, invitaciones
 - [ ] Manejo global de errores, logging estructurado, health checks
 - [ ] Abstracción de almacenamiento de archivos con implementación en disco
-- [ ] Remotos de GitHub y convenciones de equipo: ramas, commits, revisión, acceso a Neon
+- [ ] Convenciones de equipo: ramas, commits, revisión, acceso a Neon (los remotos de GitHub ya están: `xYairrx/maquinaria-backend` y `xYairrx/maquinaria-frontend`, rama `develop`)
 
 ### Criterio de salida de Fase 0
 

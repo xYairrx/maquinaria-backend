@@ -336,13 +336,80 @@ Resuelto actualizando a `Microsoft.AspNetCore.OpenApi 10.0.11` (que ya trae `Mic
 
 ---
 
-## 8. Reconstruir desde cero
+## 8. Arrancar en otra máquina
 
-1. Instalar SDK de .NET 10, Node 24+, Git y Visual Studio 2026.
-2. `npm install -g @angular/cli` y `dotnet tool install --global dotnet-ef`.
-3. Clonar los dos repositorios en una carpeta contenedora común.
-4. Crear el proyecto y la rama de Neon (§2), o pedir acceso al existente.
-5. Configurar los user secrets (§2.5).
-6. `dotnet build Maquinaria.slnx` y `dotnet ef database update`.
+Todo el trabajo vive en GitHub (`xYairrx/maquinaria-backend` y `xYairrx/maquinaria-frontend`, rama `develop`). Lo único que **no viaja con el repositorio son los user secrets**: viven en `%APPDATA%\Microsoft\UserSecrets\` de cada máquina, a propósito.
 
-No hay que volver a correr el andamiaje: eso ya vive en el repositorio.
+### 8.1 Requisitos
+
+SDK de .NET 10, Node 24+, Git. Visual Studio 2026 es opcional: todo el flujo funciona desde la terminal.
+
+### 8.2 Clonar
+
+Los dos repositorios van en una **carpeta contenedora común que no es un repositorio**:
+
+```bash
+git clone -b develop https://github.com/xYairrx/maquinaria-backend.git
+```
+
+```bash
+git clone -b develop https://github.com/xYairrx/maquinaria-frontend.git
+```
+
+### 8.3 Restaurar las herramientas
+
+**No** se instala `dotnet-ef` global. Es una herramienta **local**, con su versión fijada en `dotnet-tools.json`:
+
+```bash
+dotnet tool restore
+```
+
+> El manifiesto está en la **raíz** del repositorio, no en `.config/dotnet-tools.json`, que es lo habitual. Es deliberado: el `.gitignore` que genera .NET ignora la carpeta `.config/`, así que ahí el manifiesto quedaría sin rastrear y la versión de la herramienta no estaría fijada para nadie. En la raíz sí se versiona, y el CLI lo encuentra igual desde cualquier subdirectorio.
+
+Verifica que quedó en `10.0.11`:
+
+```bash
+dotnet ef --version
+```
+
+### 8.4 Configurar los dos secretos
+
+Es el único paso manual. Del panel **Connect** de Neon —rama `dev`, base `maquinaria_central`, framework **.NET**— se copian las dos cadenas: con *Connection pooling* encendido y apagado. El procedimiento completo, con las tres trampas de copiado, está en [configuración](guias/configuracion.md).
+
+```bash
+dotnet user-secrets set 'ConnectionStrings:Central' 'Host=...-pooler...' --project src/Maquinaria.Api
+```
+
+```bash
+dotnet user-secrets set 'ConnectionStrings:Migraciones' 'Host=... sin -pooler ...' --project src/Maquinaria.Api
+```
+
+Sin el segundo, `dotnet ef` falla de inmediato con un mensaje explícito desde `FabricaContextoCentral`, no con un error de conexión confuso.
+
+### 8.5 Compilar y verificar
+
+```bash
+dotnet build --no-incremental
+```
+
+```bash
+dotnet ef dbcontext info --context ContextoCentral --project src/Maquinaria.Infraestructura --startup-project src/Maquinaria.Api
+```
+
+La salida debe mostrar `Database name: maquinaria_central`, un `Data source` **sin** `-pooler` —prueba de que la fábrica de tiempo de diseño está tomando la cadena directa— y `using snake-case naming`.
+
+### 8.6 La base de datos ya está migrada
+
+La rama `dev` de Neon es **compartida entre máquinas**: no es una base local por desarrollador. Sus migraciones ya están aplicadas, así que este comando normalmente no hace nada, y solo hace falta cuando alguien agregó una migración nueva:
+
+```bash
+dotnet ef database update --context ContextoCentral --project src/Maquinaria.Infraestructura --startup-project src/Maquinaria.Api
+```
+
+Para ver qué hay aplicado sin tocar nada:
+
+```bash
+dotnet ef migrations list --context ContextoCentral --project src/Maquinaria.Infraestructura --startup-project src/Maquinaria.Api
+```
+
+No hay que volver a correr el andamiaje ni recrear las bases: eso ya vive en el repositorio y en Neon.

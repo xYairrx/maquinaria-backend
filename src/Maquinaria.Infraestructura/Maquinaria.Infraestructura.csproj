@@ -8,8 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
-    <!-- Solo para crear migraciones en tiempo de diseno: no se propaga ni se publica. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="EFCore.NamingConventions" />
   </ItemGroup>
 
   <ItemGroup>

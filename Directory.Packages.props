@@ -1,4 +1,4 @@
-<Project>
+﻿<Project>
 
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
@@ -9,6 +9,11 @@
   <ItemGroup>
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11" />
+	<PackageVersion Include="EFCore.NamingConventions" Version="10.0.1" />
+	<!-- Npgsql 10.0.3 arrastra EF Core 10.0.4, pero Design (PrivateAssets=all) no
+	     propaga su 10.0.11 a Maquinaria.Api: sin este pin, Api e Infraestructura
+	     compilan contra versiones distintas y sale MSB3277. -->
+	<PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.11" />
   </ItemGroup>
 
   <!-- API. Microsoft.OpenApi se fija por transitive pinning: la 2.0.0 que arrastraba

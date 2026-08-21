@@ -4,7 +4,7 @@
 
 ## Estado actual
 
-**Solo andamiaje.** `dotnet build` en verde con 0 advertencias, sin paquetes vulnerables, y `/openapi/v1.json` responde con `"paths": { }` — todavía no hay un solo endpoint de negocio ni una sola entidad.
+**La base central existe.** Las 5 tablas de plataforma están creadas y migradas en `maquinaria_central` (Neon, rama `dev`), con sus `CHECK`, sus índices y el constraint `EXCLUDE` de no-traslape verificados contra la base real. `dotnet build --no-incremental` en verde con 0 advertencias y sin paquetes vulnerables. Todavía no hay un solo endpoint de negocio: `/openapi/v1.json` sigue con `"paths": { }`.
 
 ### Hecho
 
@@ -14,11 +14,18 @@
 - [x] Central Package Management con transitive pinning
 - [x] Paquetes de EF Core, Npgsql y OpenAPI
 - [x] `dotnet user-secrets init` en `Maquinaria.Api`
+- [x] Bases `maquinaria_central` y `maquinaria_plantilla` creadas en la rama `dev`
+- [x] Secretos `ConnectionStrings:Central` (pooled) y `ConnectionStrings:Migraciones` (directa), **ambas verificadas conectando** contra Neon
+- [x] Las cuatro decisiones previas a la primera migración, cerradas (ver abajo)
+- [x] `.editorconfig` del backend, y `dotnet-ef` 10.0.11 como herramienta local (`dotnet-tools.json` en la **raíz**, no en `.config/`: el `.gitignore` de .NET ignora esa carpeta y el manifiesto quedaría sin rastrear)
+- [x] `ContextoCentral`, sus 5 entidades y sus 5 configuraciones
+- [x] Migración `CentralInicial` **aplicada** a `maquinaria_central`. `EXCLUDE`, `CHECK` de formato de `nombre_bd` y `slug`, rango de enums, `UNIQUE` y `numeric(18,4)`: los once probados contra la base real
+- [x] Migración `CentralSemillaPlanBase` aplicada: un plan `base` **provisional** (precio 0, límites en `-1`) para desbloquear el aprovisionamiento. El catálogo comercial sigue abierto en [`04-pendientes.md`](../04-pendientes.md)
+- [x] `Microsoft.EntityFrameworkCore.Design` retirado de `Infraestructura`: lo exige el proyecto de arranque, no el que contiene el `DbContext`
 
 ### Pendiente de Fase 0
 
 - [ ] `Dockerfile` para el despliegue en Railway
-- [ ] `ContextoCentral` + sus 5 entidades + primera migración
 - [ ] `ContextoEmpresa` + sus 10 entidades + su migración
 - [ ] Servicio de aprovisionamiento y comando `migrar-empresas`
 - [ ] Resolución de conexión por empresa + interceptor de auditoría
@@ -33,37 +40,76 @@ Un superadministrador da de alta una empresa desde el panel, el sistema le crea 
 
 ### Orden de trabajo
 
-El siguiente paso es el **7** del plan: `ContextoCentral` con sus 5 entidades (`plan`, `plan_limite`, `tenant`, `suscripcion`, `usuario_plataforma`) y su primera migración. El DDL de referencia está en [`05-esquema-fase0.md`](../05-esquema-fase0.md) §3.
+El paso **7** está cerrado. El siguiente es el **8**: `ContextoEmpresa` con sus 10 entidades y su migración, más su fábrica de tiempo de diseño apuntando a `maquinaria_plantilla`. El DDL de referencia está en [`05-esquema-fase0.md`](../05-esquema-fase0.md) §4.
 
 El método es por **rebanadas verticales**: `Entidad → Migración → Caso de uso → Endpoint → Pruebas → Pantalla Angular → Funciona`. No "todo el backend y luego todo el frontend".
 
 ---
 
-## Decisiones abiertas
+## Decisiones cerradas antes de la primera migración
 
-Cuatro huecos que los documentos de diseño no cierran y que conviene resolver **antes** de la primera migración, porque la regla *append-only* los vuelve irreversibles.
+Cuatro huecos que los documentos de diseño no cerraban. Se resolvieron el **2026-08-20**, antes de la primera migración, porque la regla *append-only* los vuelve irreversibles.
 
 ### 1. Carpeta y nomenclatura de las migraciones
 
-Con dos `DbContext` en el mismo assembly hay que separarlas físicamente. La forma sería:
+Con dos `DbContext` en el mismo assembly hay que separarlas físicamente:
 
-```bash
-dotnet ef migrations add <Nombre> --context ContextoCentral --output-dir Migraciones/Central --project src/Maquinaria.Infraestructura --startup-project src/Maquinaria.Api
+```
+src/Maquinaria.Infraestructura/Migraciones/Central/
+src/Maquinaria.Infraestructura/Migraciones/Empresa/
 ```
 
-Ningún documento fija la carpeta ni un prefijo de nombres. Renombrarlas después viola la regla *append-only*.
+Se logra con `--output-dir`; EF Core deriva el *namespace* de la carpeta. Ejemplo:
+
+```bash
+dotnet ef migrations add CentralInicial --context ContextoCentral --output-dir Migraciones/Central --project src/Maquinaria.Infraestructura --startup-project src/Maquinaria.Api
+```
+
+**Los nombres llevan prefijo del contexto** — `CentralInicial`, `EmpresaInicial`. No porque la carpeta no desambigüe, sino porque `dotnet ef migrations list` y los logs de despliegue muestran **solo el nombre**: con dos migraciones llamadas `Inicial`, el reporte de `migrar-empresas` sería ambiguo. Y renombrarlas después viola *append-only*.
+
+No hay riesgo de colisión entre los dos juegos: cada base tiene su propia `__EFMigrationsHistory`, y la central y las de empresa son bases distintas.
 
 ### 2. Mapeo PascalCase → snake_case
 
-No está definido si se usa `EFCore.NamingConventions` (con `UseSnakeCaseNamingConvention()`), una convención global propia, o `HasColumnName` explícito por propiedad. El paquete no aparece en la lista de dependencias de los documentos.
+**`EFCore.NamingConventions`** (versión 10.0.1 — el paquete sigue el versionado de EF Core, major 10 = EF Core 10), con `UseSnakeCaseNamingConvention()` en cada contexto:
+
+```csharp
+options.UseNpgsql(cadena).UseSnakeCaseNamingConvention();
+```
+
+Traduce tablas, columnas, índices, constraints y llaves. Las alternativas se descartaron por costo: `HasColumnName` por propiedad son ~500 líneas de mapeo con 75 entidades, y una convención propia son ~40 líneas que hay que mantener y probar.
+
+**Es decisión de Fase 0 y no de después:** el paquete cambia el esquema generado, así que agregarlo tras la primera migración obliga a una migración de renombre masivo.
+
+Ojo al escribir las entidades: la convención traduce el nombre del `DbSet`, así que `DbSet<Usuario> Usuarios` produciría la tabla `usuarios`. El DDL de diseño usa **singular** (`usuario`), así que el nombre se fija explícitamente con `ToTable()`.
 
 ### 3. `IDesignTimeDbContextFactory` para `ContextoEmpresa`
 
-Ese contexto no tiene cadena fija — se resuelve por petición — así que `dotnet ef migrations add` no puede instanciarlo solo. Ningún documento lo menciona, pero hace falta.
+Los dos contextos **no** tienen el mismo problema:
 
-### 4. Nombre de la base central
+- **`ContextoCentral` la necesita por la cadena de conexión.** Sin fábrica, `dotnet ef` construye el host y toma el contexto del contenedor de DI — con la cadena `Central`, que es la **pooled**, y por ahí no se puede correr DDL. La fábrica lo fuerza a `Migraciones`, la directa. (Corregido el 2026-08-20: la primera versión de esta decisión decía que no hacía falta.)
+- **`ContextoEmpresa` sí.** No tiene cadena fija —se resuelve por petición— así que EF no tiene de dónde sacarla.
 
-Ningún documento lo fija; queda implícito en la cadena de conexión, y en Neon el default es `neondb`. Las bases de empresa sí tienen patrón definido: `maquinaria_<slug>`.
+**Va en `src/Maquinaria.Api/TiempoDiseno/`**, no en `Infraestructura`. EF Core busca la fábrica en el assembly de las migraciones *o* en el proyecto de arranque. Ponerla en `Infraestructura` obligaría a agregarle tres paquetes de configuración (`Configuration.UserSecrets`, `.Json`, `.EnvironmentVariables`) más el GUID de secretos duplicado, porque `Infraestructura` no puede referenciar `Api` sin ciclo. En `Api` lee la configuración igual que la aplicación real y **no agrega ni un paquete**.
+
+Es un compromiso consciente: código de tiempo de diseño en el proyecto de API es raro, pero la alternativa cuesta cuatro dependencias y un secreto duplicado para lo mismo.
+
+**La de `ContextoEmpresa` no lleva cadena propia.** Toma `ConnectionStrings:Migraciones` y le sustituye el `Database=` por `maquinaria_plantilla` con `NpgsqlConnectionStringBuilder`. Así no hay un tercer secreto que se desincronice, y el camino de código es el mismo que usa el runtime con cada empresa.
+
+### 4. Nombres de las bases de datos
+
+Dos bases, no una:
+
+| Base | Para qué |
+|---|---|
+| `maquinaria_central` | `ContextoCentral`. Sustituye al `neondb` por defecto de Neon |
+| `maquinaria_plantilla` | `ContextoEmpresa` **solo en tiempo de diseño** |
+
+La plantilla existe por un peligro que se deriva de la decisión 3: en cuanto haya fábrica para `ContextoEmpresa`, un `dotnet ef database update --context ContextoEmpresa` distraído aplicaría migraciones a la base a la que apunte esa cadena — la central, o peor, la de un cliente fuera del proceso controlado de `migrar-empresas`. Apuntando a una base vacía, ese comando no puede hacer daño, y de paso da dónde inspeccionar el esquema de empresa generado contra §4 de [`05-esquema-fase0.md`](../05-esquema-fase0.md).
+
+En Neon no cuesta nada: mismo proyecto, cobro por almacenamiento.
+
+**Consecuencia: hace falta una lista de slugs reservados.** Un tenant con slug `plantilla` generaría `nombre_bd = maquinaria_plantilla` y chocaría; igual `central`. La validación del alta debe rechazar al menos `central`, `plantilla`, `admin`, `api`, `www`, `app`. Esto no está en ningún documento de diseño — se detectó al cerrar esta decisión.
 
 ---
 

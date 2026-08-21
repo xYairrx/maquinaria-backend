@@ -35,10 +35,34 @@ El endpoint pooled corre **PgBouncer en modo transacción**: la conexión físic
 **Npgsql no acepta el formato URI** (`postgresql://usuario:password@host/base`) que Neon muestra por defecto. Necesita el formato ADO.NET de `clave=valor`:
 
 ```
-Host=ep-xxx.us-east-1.aws.neon.tech;Database=neondb;Username=...;Password=...;SSL Mode=Require;Channel Binding=Require
+Host=ep-xxx.c-12.us-east-1.aws.neon.tech; Database=maquinaria_central; Username=neondb_owner; Password=...; SSL Mode=VerifyFull; Channel Binding=Require;
 ```
 
-En la consola de Neon, en **Connection Details**, selecciona el framework **.NET** para obtenerlo directamente. El toggle de *Connection pooling* es lo que agrega o quita el sufijo `-pooler`. Verifica también que estás en la rama `dev` y no en `production`.
+En el panel **Connect** de Neon: elige la rama `dev` (no `production`), la base `maquinaria_central` en el selector de *Database* —así la cadena ya viene con el `Database=` correcto— y el framework **.NET**. El toggle de *Connection pooling* es lo único que agrega o quita el sufijo `-pooler`; el segmento `c-12` se queda en las dos.
+
+`SSL Mode=VerifyFull` es lo que da Neon hoy y es lo que se usa. Además de cifrar, valida la cadena del certificado y que el hostname coincida, lo que detecta un man-in-the-middle que `Require` no vería. Funciona con Neon sin configuración extra.
+
+Tres trampas al copiar la cadena, las tres verificadas en carne propia:
+
+- **El snippet viene entre comillas dobles.** Son para pegarlo en un `appsettings.json`. Si quedan dentro del valor del secreto, Npgsql recibe una cadena que empieza con `"` y falla el parseo. El valor debe empezar en `Host=`.
+- **El password se muestra enmascarado.** Hay que darle a *Show password* y confirmar que lo copiado trae el `npg_...` real y no `****`. El error que produce habla de autenticación, no de asteriscos.
+- **La pestaña `Entity Framework (appsettings.json)` no se usa en este proyecto.** Te da un fragmento listo para pegar en un archivo que se commitea. Quédate en *Connection string*.
+
+### En qué terminal
+
+En **PowerShell**, con **comillas simples** alrededor del valor: las dobles interpolan `$`, y un `$` en el password te guarda la cadena mutilada.
+
+```bash
+dotnet user-secrets set 'ConnectionStrings:Central' 'Host=...;' --project src/Maquinaria.Api
+```
+
+En **cmd** esto no funciona: la comilla simple no delimita nada, y si copias un marcador de posición con `<` o `>` cmd los interpreta como **redirección** y responde *El sistema no puede encontrar el archivo especificado* — un mensaje que no menciona a `dotnet` ni a los secretos.
+
+Para verificar sin volcar los valores:
+
+```bash
+dotnet user-secrets list --project src/Maquinaria.Api | ForEach-Object { ($_ -split '=')[0].Trim() }
+```
 
 ## Dónde van los secretos
 
@@ -99,6 +123,22 @@ Neon Auth va desactivado porque choca con el modelo de base por empresa y con la
 
 En plan gratuito Neon **suspende el cómputo** tras unos minutos de inactividad, así que la primera consulta después de una pausa tarda. Aceptable en desarrollo, no para una demo con cliente.
 
-## El nombre de la base central
+## Las bases de datos de desarrollo
 
-Ningún documento de diseño lo fija: queda implícito en la cadena de conexión, y en Neon el default es `neondb`. Las bases de empresa sí tienen patrón definido, `maquinaria_<slug>`.
+Decidido el 2026-08-20 (ver [estado y pendientes](estado-y-pendientes.md#4-nombres-de-las-bases-de-datos)). En la rama `dev` del proyecto de Neon:
+
+| Base | Contexto | Para qué |
+|---|---|---|
+| `maquinaria_central` | `ContextoCentral` | La central. Sustituye al `neondb` por defecto |
+| `maquinaria_plantilla` | `ContextoEmpresa` | **Solo tiempo de diseño.** Blanco inofensivo para `dotnet ef database update` y sitio donde inspeccionar el esquema de empresa generado |
+| `neondb` | — | La que crea Neon. No se usa |
+
+Las bases de empresa siguen el patrón `maquinaria_<slug>` y las crea el aprovisionamiento, nunca a mano.
+
+**Solo hay dos secretos, no tres.** La fábrica de tiempo de diseño de `ContextoEmpresa` no lleva cadena propia: toma `ConnectionStrings:Migraciones` y le sustituye el `Database=` por `maquinaria_plantilla` con `NpgsqlConnectionStringBuilder`. Así no hay un tercer valor que se desincronice, y es el mismo camino de código que el runtime usa para resolver la base de cada empresa.
+
+**`plantilla` y `central` quedan reservados como slugs de tenant**, porque un slug `plantilla` produciría `nombre_bd = maquinaria_plantilla` y chocaría con esta base.
+
+### Verificado el 2026-08-20
+
+Ambas cadenas conectan contra Neon: PostgreSQL **18.6**, usuario `neondb_owner`, región `us-east-1`. `btree_gist` 1.8 y `pg_trgm` 1.6 aparecen **disponibles pero no instaladas** en ninguna base, que es lo correcto: se instalan por migración, no a mano.

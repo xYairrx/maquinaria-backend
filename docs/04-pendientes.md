@@ -108,7 +108,7 @@ Son decisiones de negocio, no técnicas, pero condicionan el desarrollo:
 | Tema | Pregunta |
 |---|---|
 | Identificación del tenant | ¿Subdominio (`empresa.tuapp.com`) o selector tras el login? El subdominio es mejor experiencia y mejor aislamiento, pero requiere DNS wildcard y certificado comodín |
-| Planes | ¿Qué diferencia al Básico del Profesional? ¿Número de equipos, usuarios, o módulos habilitados? Si es por módulos, hace falta un sistema de *feature flags* por plan desde la Fase 0 |
+| **Planes** | ¿Qué diferencia al Básico del Profesional? ¿Número de equipos, usuarios, o módulos habilitados? Si es por módulos, hace falta un sistema de *feature flags* por plan desde la Fase 0. **Bloqueante parcial, con salida provisional:** la migración `CentralSemillaPlanBase` (2026-08-20) siembra un único plan `base`, precio 0 y todos los límites en `-1`, únicamente para que el aprovisionamiento tenga a qué asociar la suscripción. No es catálogo comercial. Los precios reales **no** deben cargarse por migración —serían *append-only* y cambiar un precio exigiría un despliegue—, sino desde el panel de superadministrador |
 | Prueba gratuita | ¿Autoservicio con tarjeta o alta manual? Define si hace falta pasarela de pago temprano |
 | Cobro de suscripción | ¿Stripe, Mercado Pago, o facturación manual al inicio? |
 | Portal de cliente | El rol `cliente` del M25 sugiere que los clientes de la empresa entran al sistema. ¿Es parte del producto base o un módulo aparte? |

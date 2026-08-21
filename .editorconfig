@@ -1,0 +1,74 @@
+# Convenciones de formato del backend de Maquinaria.
+# Las reglas de estilo van como "suggestion" a proposito: se ven como sugerencia
+# en el editor pero NO generan advertencias de compilacion, para que el build siga
+# en 0 advertencias. Si algun dia se quiere volverlas obligatorias, se sube a
+# "warning" y se corrige lo que salga en el mismo commit.
+
+root = true
+
+[*]
+charset = utf-8-bom
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,yml,yaml,md}]
+indent_size = 2
+
+[*.{csproj,props,targets,slnx}]
+indent_size = 2
+
+[*.md]
+# En Markdown, dos espacios al final significan salto de linea.
+trim_trailing_whitespace = false
+
+[*.cs]
+# --- Lo que evita reescribir la plantilla de Visual Studio en cada archivo ---
+
+# namespace Maquinaria.X;  en vez de  namespace Maquinaria.X { }
+csharp_style_namespace_declarations = file_scoped:suggestion
+
+# ImplicitUsings ya trae System y System.Collections.Generic: los using de la
+# plantilla sobran siempre.
+dotnet_diagnostic.IDE0005.severity = suggestion
+
+# --- Estilo del lenguaje ---
+csharp_using_directive_placement = outside_namespace:suggestion
+csharp_prefer_braces = true:suggestion
+csharp_style_prefer_primary_constructors = false:suggestion
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+dotnet_style_prefer_collection_expression = true:suggestion
+dotnet_style_namespace_match_folder = true:suggestion
+
+# Un miembro con el mismo nombre que su tipo. Tenant.EstadoAprovisionamiento lo
+# incumple a proposito, para que la columna se llame estado_aprovisionamiento sin
+# configuracion extra. Queda en silencio para no arrastrar una supresion local.
+dotnet_diagnostic.CA1721.severity = none
+
+# --- Nomenclatura ---
+dotnet_naming_rule.tipos_pascal_case.severity = suggestion
+dotnet_naming_rule.tipos_pascal_case.symbols = tipos
+dotnet_naming_rule.tipos_pascal_case.style = pascal_case
+dotnet_naming_symbols.tipos.applicable_kinds = class,struct,interface,enum,delegate,method,property,event
+dotnet_naming_symbols.tipos.applicable_accessibilities = *
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+
+dotnet_naming_rule.interfaces_con_i.severity = suggestion
+dotnet_naming_rule.interfaces_con_i.symbols = interfaces
+dotnet_naming_rule.interfaces_con_i.style = prefijo_i
+dotnet_naming_symbols.interfaces.applicable_kinds = interface
+dotnet_naming_symbols.interfaces.applicable_accessibilities = *
+dotnet_naming_style.prefijo_i.required_prefix = I
+dotnet_naming_style.prefijo_i.capitalization = pascal_case
+
+dotnet_naming_rule.campos_privados_guion_bajo.severity = suggestion
+dotnet_naming_rule.campos_privados_guion_bajo.symbols = campos_privados
+dotnet_naming_rule.campos_privados_guion_bajo.style = guion_bajo_camel
+dotnet_naming_symbols.campos_privados.applicable_kinds = field
+dotnet_naming_symbols.campos_privados.applicable_accessibilities = private
+dotnet_naming_style.guion_bajo_camel.required_prefix = _
+dotnet_naming_style.guion_bajo_camel.capitalization = camel_case

@@ -73,13 +73,14 @@ CREATE TABLE plan (
     nombre         text          NOT NULL,
     descripcion    text          NULL,
     precio_mensual numeric(18,4) NOT NULL,
-    moneda         char(3)       NOT NULL DEFAULT 'MXN',
+    moneda         text          NOT NULL DEFAULT 'MXN',
     orden          int           NOT NULL DEFAULT 0,
     activo         boolean       NOT NULL DEFAULT true,
     creado_en      timestamptz   NOT NULL DEFAULT now(),
 
     CONSTRAINT plan_codigo_unico  UNIQUE (codigo),
-    CONSTRAINT plan_precio_valido CHECK (precio_mensual >= 0)
+    CONSTRAINT plan_precio_valido CHECK (precio_mensual >= 0),
+    CONSTRAINT plan_moneda_valida CHECK (length(moneda) = 3)
 );
 ```
 
@@ -119,7 +120,7 @@ CREATE TABLE tenant (
     estado_aprovisionamiento smallint    NOT NULL,   -- 1 Pendiente | 2 Creando | 3 Lista | 4 Fallida
     version_esquema          text        NULL,       -- ultima migracion aplicada en su base
     zona_horaria             text        NOT NULL DEFAULT 'America/Mexico_City',
-    moneda                   char(3)     NOT NULL DEFAULT 'MXN',
+    moneda                   text        NOT NULL DEFAULT 'MXN',
     dia_pago                 smallint    NULL,       -- dia del mes de cobro
     creado_en                timestamptz NOT NULL DEFAULT now(),
     actualizado_en           timestamptz NULL,
@@ -129,7 +130,8 @@ CREATE TABLE tenant (
     CONSTRAINT tenant_bd_unica     UNIQUE (nombre_bd),
     CONSTRAINT tenant_slug_formato CHECK (slug ~ '^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$'),
     CONSTRAINT tenant_bd_formato   CHECK (nombre_bd ~ '^[a-z][a-z0-9_]{2,62}$'),
-    CONSTRAINT tenant_dia_pago     CHECK (dia_pago IS NULL OR dia_pago BETWEEN 1 AND 31)
+    CONSTRAINT tenant_dia_pago     CHECK (dia_pago IS NULL OR dia_pago BETWEEN 1 AND 31),
+    CONSTRAINT tenant_moneda_valida CHECK (length(moneda) = 3)
 );
 ```
 

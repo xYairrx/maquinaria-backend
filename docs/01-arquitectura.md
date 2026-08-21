@@ -152,7 +152,7 @@ Decisiones que se toman una vez y no se vuelven a discutir:
 | Fechas | `timestamptz`, siempre UTC | La zona horaria de presentación se guarda por tenant |
 | Rangos de fecha | `tstzrange` | Habilita los constraints de no-traslape (ver `02-modelo-datos.md`) |
 | Borrado | Lógico (`eliminado_en`) en entidades de negocio | Un equipo o una renta nunca se borran de verdad; hay auditoría e historial que dependen de ellos |
-| Enums | `int` en BD + enum en C# | Más simple de migrar que los enums nativos de Postgres |
+| Enums | `smallint` en BD + `enum : short` en C# | Más simple de migrar que los enums nativos de Postgres. Se declara `: short` para que EF deduzca `smallint` sin configurar cada propiedad. Los valores arrancan en 1, nunca en 0, y un `CHECK` acota el rango |
 | Extensiones | `btree_gist`, `pg_trgm` | Constraints de exclusión y búsqueda por texto. **No** se necesita ninguna extensión de UUID: los generamos en C# con `Guid.CreateVersion7()` |
 
 ---

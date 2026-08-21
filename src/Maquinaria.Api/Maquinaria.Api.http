@@ -1,0 +1,7 @@
+@Maquinaria.Api_HostAddress = http://localhost:5123
+
+# Documento OpenAPI (solo en Development)
+GET {{Maquinaria.Api_HostAddress}}/openapi/v1.json
+Accept: application/json
+
+###

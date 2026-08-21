@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Maquinaria.Api/Maquinaria.Api.csproj" />
+    <Project Path="src/Maquinaria.Aplicacion/Maquinaria.Aplicacion.csproj" />
+    <Project Path="src/Maquinaria.Dominio/Maquinaria.Dominio.csproj" />
+    <Project Path="src/Maquinaria.Infraestructura/Maquinaria.Infraestructura.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Maquinaria.Api.Tests/Maquinaria.Api.Tests.csproj" />
+    <Project Path="tests/Maquinaria.Dominio.Tests/Maquinaria.Dominio.Tests.csproj" />
+  </Folder>
+</Solution>

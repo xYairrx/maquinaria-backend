@@ -158,6 +158,10 @@ erDiagram
 ```
 
 `Equipo` — estados: `Disponible`, `Reservado`, `Rentado`, `EnTransito`, `Mantenimiento`, `FueraDeServicio`, `Baja`.
+
+> **Un solo ciclo de vida, que puede terminar en venta.** Decidido el 2026-08-21: el equipo se renta durante años y al final **se vende**, así que no hay dos parques separados —uno de renta y otro de venta— sino una sola entidad con una vida larga. La venta será el motivo de su `Baja`, y tendrá que cerrar su calendario de ocupación para que no pueda rentarse después.
+>
+> **No se construye todavía.** Se evaluó ampliar el primer entregable a venta y compra de equipos y se decidió **acotarlo a rentas**. Lo que esta nota preserva es la decisión estructural, que es la cara: separar los parques desde el alta habría sido una reescritura, mientras que agregar un motivo de baja y un documento de venta sobre esta forma es aditivo.
 El QR no es una tabla: es un `token_qr` único en `Equipo`.
 
 ### Comercial — M4, M5, M6, M7

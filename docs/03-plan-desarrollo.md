@@ -39,7 +39,14 @@ Sin esto, todo lo demás se construye sobre arena. Es la fase más importante y 
 
 ### Fase 1 — Núcleo *(M2, M3, M4, M5, M7, M24, M25)*
 
-Equipos con expediente, clientes, obras, tarifas, sucursales y patios, disponibilidad con el constraint de exclusión, cotizaciones y rentas.
+Equipos con expediente, clientes, obras, tarifas, sucursales y ubicaciones, disponibilidad con el constraint de exclusión, cotizaciones y rentas.
+
+> **Alcance precisado el 2026-08-24**, con dos cosas que el documento funcional no contempla y una que sí y se acota:
+>
+> - **Trabajadores y puestos** — **no están en la especificación**. Un trabajador es una *persona* con un puesto; un usuario es una *cuenta*. El operador de patio puede no tener acceso al sistema, y hay que poder registrarlo igual.
+> - **Ubicaciones, no solo patios.** El documento dice "sucursales y patios"; el negocio también tiene bodegas y talleres. Se modela como `ubicacion` dentro de la sucursal, con un `tipo`.
+> - **La renta es solo de equipo, sin operador** (cierra §2.4 de `04-pendientes.md`). **El flete sí se cobra dentro de la renta** — como cargo con precio y costo, para poder calcular margen — pero vehículos, operadores, rutas y estados de entrega siguen siendo M8 en la Fase 2.
+> - **Reservar solo desde usuarios internos.** Sin portal de cliente, lo que pospone la decisión de §6.1 de `05-esquema-fase0.md` sobre cómo filtrar filas por cliente dentro de una empresa.
 
 **Criterio de salida:** el ciclo completo cotizar → aprobar → rentar → cerrar funciona, y es imposible rentar dos veces el mismo equipo en fechas traslapadas.
 

@@ -373,6 +373,84 @@ tenant de prueba dentro de una transacción que termina en `ROLLBACK`: 26 módul
 contratados, el cupo propio de 300 equipos ganando sobre el valor por defecto, y la
 compuerta respondiendo `true` para `rentas` y `false` para un módulo inexistente.
 
+### Fase 1, bloque A: catálogos, ubicación y trabajadores — 2026-08-24
+
+Nueve tablas aplicadas a `maquinaria_plantilla`, que pasa de 10 a 19:
+
+```
+categoria_equipo · tipo_equipo · marca · modelo_equipo
+sucursal · ubicacion · puesto · trabajador
+proveedor
+```
+
+Son las que **no dependen de las reglas de tarificación**, que siguen siendo el bloqueante
+del cierre de la Fase 1.
+
+**Trabajador y usuario son entidades distintas, y esa es la decisión de fondo.** Un
+trabajador es una persona con un puesto; un usuario es una cuenta con roles. La mayoría del
+personal de patio no entra al sistema, y el administrador de la empresa podría no ser
+trabajador. La liga es opcional en los dos sentidos: `trabajador.usuario_id` nullable con
+**único parcial**. Se puso la FK de ese lado a propósito, para **no tocar la tabla
+`usuario`**, que es de la Fase 0 y ya está migrada en las bases existentes.
+
+**`ubicacion` en lugar de `patio`.** El documento solo dice "patios", pero el negocio tiene
+bodegas y talleres. Un `tipo` —`Patio | Bodega | Taller | Otro`— cubre los tres y los que
+falten sin inventar una tabla por cada uno. Guardar una bodega en una tabla llamada `patio`
+se lee mal y envejece peor.
+
+**Un constraint que vale la pena señalar:** `trabajador_baja_coherente` exige
+`(estado = Baja) = (fecha_baja IS NOT NULL)`. Sin él, "de baja sin fecha" y "con fecha pero
+activo" son indistinguibles de los datos buenos, y el día que alguien filtre por
+`fecha_baja` los números mienten en silencio.
+
+**Verificado contra la base real:** 13 casos negativos rechazados —tipo fuera de rango,
+media coordenada, latitud imposible, código repetido en la misma sucursal, las dos
+incoherencias de baja, número de empleado duplicado, borrar un puesto en uso, borrar una
+sucursal con ubicaciones, modelo duplicado de la misma marca— y 3 positivos aceptados,
+entre ellos el mismo código de ubicación en **otra** sucursal y dos trabajadores sin cuenta,
+que es lo que prueba que el único es parcial. Todo dentro de una transacción que termina en
+`ROLLBACK`.
+
+**Un comentario que mentía, corregido antes de aplicar.** El índice de `proveedor` decía
+servir para búsqueda por texto parcial con `pg_trgm`, pero era un btree, que solo acelera
+igualdad y prefijos — no `%excavadora%`. Ahora es
+`USING gin (razon_social gin_trgm_ops)`, verificado en `pg_indexes`.
+
+### El desfase de esquema dejó de ser teórico
+
+`maquinaria_plantilla` está en `EmpresaCatalogosOrganizacion` y **`demo` y `bajio` siguen en
+`EmpresaPermisosModulosCompletos`**. Las dos empresas reales están una migración atrás.
+
+Es exactamente el escenario para el que existe `migrar-empresas`, y el comando **no está
+escrito**. Por ahora hay que aplicar a mano, base por base. Con dos empresas se aguanta;
+con veinte, no. Sube de prioridad.
+
+### Alcance del primer entregable: se evaluó ampliarlo a venta y compra — 2026-08-21
+
+Se planteó incluir **venta, compra y renta** de equipos en el primer entregable. Se
+analizó y **se acotó de vuelta a rentas**.
+
+El análisis vale conservarlo, porque el riesgo no era obvio: *"venta"* significa dos cosas
+con modelos incompatibles.
+
+| lectura | qué implica |
+|---|---|
+| Vender equipo **usado del parque** | Desinversión de un activo serializado. Barato: un motivo de baja y un documento de venta |
+| Vender equipo **nuevo comprado para revender** | Inventario con existencias y movimientos. **Adelanta M16 y M17 de la Fase 3 a la Fase 1** |
+
+La segunda no es ampliar el MVP, es duplicarlo.
+
+**La decisión que sí se tomó, y es la que importa:** el equipo tiene **un solo ciclo de
+vida** que puede terminar en venta. No hay parques separados. Eso descarta la alternativa
+cara —decidir al comprar si una máquina es de renta o de venta, y no poder cambiarlo— y
+deja la venta como algo aditivo sobre el modelo actual. Anotado en
+[`02-modelo-datos.md`](../02-modelo-datos.md).
+
+**Lo que NO se hizo, a propósito:** no se agregó un `tipo` a `cotizacion_linea` "por si
+acaso". Agregarlo después es `ADD COLUMN tipo smallint NOT NULL DEFAULT 1` con backfill
+implícito — trivial. Adelantar estructura para una funcionalidad que no está decidida es
+como se llenan los modelos de columnas que nadie usa.
+
 ### La especificación funcional entró al repositorio — 2026-08-21
 
 El `.docx` que `docs/README.md` enlazaba y no existía ya está versionado, junto con su

@@ -7,11 +7,16 @@
 
 ## 1. Bloqueantes de la Fase 1
 
-### 1.1 Módulos faltantes en el documento
+### 1.1 ~~Módulos faltantes en el documento~~ — resuelto el 2026-08-21
 
-La numeración salta: va del **20 al 24**, y del **27 al 29**. Faltan los módulos **21, 22, 23 y 28**.
+La numeración salta del **20 al 24** y del **27 al 29**, y durante un tiempo se asumió que
+faltaban los módulos 21, 22, 23 y 28 de una versión incompleta del documento.
 
-Por el contexto del resto del documento, probablemente sean cotizaciones/contratos de servicios, calendario, obras o portal de cliente. **Hay que conseguir la versión completa** antes de cerrar el modelo de datos: si uno de ellos introduce una entidad transversal, es mejor saberlo ahora.
+**No faltan: no existen.** El `.docx` entró al repositorio y define **26 módulos**, con esos
+cuatro números simplemente sin usar. No hay ninguna entidad transversal escondida ahí, que
+era el riesgo real que esta sección señalaba.
+
+El catálogo de `modulo` en la base central ya tiene los 26, y `ClavesModulo` también.
 
 ### 1.2 Reglas de tarificación — el hueco más grande
 
@@ -83,7 +88,18 @@ Al ser SaaS, cada empresa suscrita factura con **sus propios** certificados CSD 
 
 Es la decisión de mayor riesgo legal del producto. Vale la pena asesoría fiscal antes de diseñarlo.
 
-### 2.4 Renta con operador
+### 2.4 ~~Renta con operador~~ — resuelto el 2026-08-24
+
+**La renta es unicamente de equipo. No incluye operador.** Decision del negocio.
+
+Eso cierra la pregunta de si rentar con operador era un producto distinto —con costo de
+mano de obra, control de jornadas, horas extra y obligaciones laborales— y quita esa
+complejidad del modelo. El `Operador` del M8 sigue existiendo, pero solo como quien
+**mueve** el equipo en un flete, no como parte de lo que se renta.
+
+El texto original de esta seccion, para contexto:
+
+#### Planteamiento original
 
 El documento menciona "operador" en cotizaciones, contratos y logística, pero no aclara si la empresa **renta equipo con operador incluido** —que es un servicio distinto, con costo de mano de obra, control de jornadas, horas extra y obligaciones laborales— o si el operador solo mueve el equipo en el flete. Son dos productos diferentes.
 

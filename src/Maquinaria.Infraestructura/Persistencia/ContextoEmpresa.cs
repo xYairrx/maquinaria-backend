@@ -1,4 +1,7 @@
 ﻿using Maquinaria.Dominio.Archivos;
+using Maquinaria.Dominio.Catalogos;
+using Maquinaria.Dominio.Organizacion;
+using Maquinaria.Dominio.Terceros;
 using Maquinaria.Dominio.Configuracion;
 using Maquinaria.Dominio.Seguridad;
 using Maquinaria.Dominio.Trazabilidad;
@@ -39,6 +42,26 @@ public class ContextoEmpresa : DbContext
 
     public DbSet<UsuarioRol> UsuarioRoles => Set<UsuarioRol>();
 
+    // ---------------------------------------------------------- Fase 1 --
+    public DbSet<CategoriaEquipo> CategoriasEquipo => Set<CategoriaEquipo>();
+
+    public DbSet<TipoEquipo> TiposEquipo => Set<TipoEquipo>();
+
+    public DbSet<Marca> Marcas => Set<Marca>();
+
+    public DbSet<ModeloEquipo> ModelosEquipo => Set<ModeloEquipo>();
+
+    public DbSet<Sucursal> Sucursales => Set<Sucursal>();
+
+    public DbSet<Ubicacion> Ubicaciones => Set<Ubicacion>();
+
+    public DbSet<Puesto> Puestos => Set<Puesto>();
+
+    public DbSet<Trabajador> Trabajadores => Set<Trabajador>();
+
+    public DbSet<Proveedor> Proveedores => Set<Proveedor>();
+
+    // ---------------------------------------------------------- Fase 0 --
     public DbSet<Parametro> Parametros => Set<Parametro>();
 
     public DbSet<Archivo> Archivos => Set<Archivo>();

@@ -121,6 +121,9 @@ internal sealed class UsuariosEmpresaEf(ContextoEmpresa empresa) : IUsuariosEmpr
     public Task<Usuario?> BuscarPorCorreoAsync(string correo, CancellationToken ct)
         => empresa.Usuarios.FirstOrDefaultAsync(u => u.Correo == correo, ct);
 
+    public Task<Usuario?> BuscarPorIdAsync(Guid usuarioId, CancellationToken ct)
+        => empresa.Usuarios.FirstOrDefaultAsync(u => u.Id == usuarioId, ct);
+
     public async Task<IReadOnlyList<string>> PermisosDeAsync(Guid usuarioId, CancellationToken ct)
         => await empresa.UsuarioRoles
             .Where(ur => ur.UsuarioId == usuarioId)

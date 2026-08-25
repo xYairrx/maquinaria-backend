@@ -62,6 +62,15 @@ public interface IUsuariosEmpresa
     Task<Usuario?> BuscarPorCorreoAsync(string correo, CancellationToken ct);
 
     /// <summary>
+    /// Por id, para el refresco: una sesion_refresh guarda usuario_id, no el correo.
+    ///
+    /// Se lee EN CADA refresco y no se confia en lo que dice el token viejo, porque es lo
+    /// que permite que suspender a alguien o darlo de baja le corte el acceso en la
+    /// siguiente renovacion en lugar de en 30 dias.
+    /// </summary>
+    Task<Usuario?> BuscarPorIdAsync(Guid usuarioId, CancellationToken ct);
+
+    /// <summary>
     /// Las claves de permiso de todos los roles del usuario, sin repetir.
     ///
     /// NO aplica la interseccion con los modulos del plan: eso lo hace el caso de uso,

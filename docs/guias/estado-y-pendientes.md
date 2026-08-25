@@ -1,14 +1,32 @@
 # Estado y pendientes
 
-Última verificación: 2026-08-24.
+Última verificación: 2026-08-25.
 
 ## Estado actual
 
-**El esquema de la Fase 0 está completo y el primer login funciona.** Las 9 tablas de plataforma en `maquinaria_central` y las 10 de empresa en `maquinaria_plantilla` (Neon, rama `dev`), con sus `CHECK`, sus índices y el constraint `EXCLUDE` de no-traslape verificados contra la base real. `dotnet build --no-incremental` en verde con 0 advertencias y sin paquetes vulnerables.
+**El esquema de la Fase 0 está completo y el primer login funciona.** Las 9 tablas de plataforma en `maquinaria_central` y las 10 de empresa en `maquinaria_plantilla` (Neon, rama `dev`), con sus `CHECK`, sus índices y el constraint `EXCLUDE` de no-traslape verificados contra la base real.
 
 **`/openapi/v1.json` ya no está vacío:** expone `POST /api/plataforma/sesion` y `GET /api/plataforma/sesion/actual`. Un superadministrador inicia sesión, recibe un JWT y accede a un endpoint protegido, comprobado de punta a punta contra Neon.
 
-**El ciclo completo de credenciales de un usuario de empresa está cerrado** (2026-08-24): invitación, definición de contraseña, login con slug y restablecimiento. Y **el navegador ya puede hablar con la API**: el CORS pasó de lista fija a predicado sobre un dominio base, porque cada empresa vive en su propio subdominio. `Maquinaria.Api.Tests` está en **116 pruebas, todas en verde** — verificado corriéndolas el 2026-08-24.
+**El ciclo completo de credenciales de un usuario de empresa está cerrado** (2026-08-24): invitación, definición de contraseña, login con slug y restablecimiento. Y **el navegador ya puede hablar con la API**: el CORS pasó de lista fija a predicado sobre un dominio base, porque cada empresa vive en su propio subdominio.
+
+**Al 2026-08-25 se cerraron las tres piezas que faltaban del ciclo de vida de una empresa**:
+el comando `migrar-empresas` con su endpoint de salud de esquemas, el refresco rotativo de la
+sesión de empresa y el reintento de un alta en `Fallida`. Las tres eran mecánica pequeña sobre
+código que ya existía, y la última destapó **un agujero de seguridad en el sembrador del
+administrador**, que se cerró el mismo día y tiene
+[sección propia](#el-agujero-del-sembrador-de-administradores--2026-08-25) porque es lo más
+importante de la jornada. Lo que sigue abierto de la Fase 0 es todo transversal: el
+interceptor de auditoría —el único de la secuencia de arranque que falta—, el logging con
+`correlacion_id`, el almacenamiento de archivos, el `Dockerfile` y las convenciones de equipo.
+
+**Medido corriendo las herramientas el 2026-08-25:**
+`dotnet build Maquinaria.slnx --no-incremental` da **compilación correcta, 0 errores**; la
+única advertencia es el `MSB3061` de la DLL que un proceso vivo de `Maquinaria.Api` tiene
+tomada, que no es código sino la [trampa de operación](#trampa-de-operación-dos-instancias-de-la-api-a-la-vez)
+ya conocida. `dotnet test` deja `Maquinaria.Api.Tests` en **205 pruebas, 0 fallos**, y
+`Maquinaria.Dominio.Tests` en 1. **La cifra de 116 que este documento traía era del
+2026-08-24** y estaba vieja: ver [las cifras corregidas](#cifras-que-la-propia-bitácora-tenía-mal).
 
 ### Hecho
 
@@ -53,14 +71,22 @@
 
   **No hay PUT ni PATCH del plan completo, y es una decisión**: ver los dos huecos que la
   cierran en la sección de abajo. Lo que sí se puede es retirar un plan y crear su sucesor.
-- [ ] Comando `migrar-empresas` + endpoint de salud que reporte quién quedó atrasado
-- [ ] Endpoint para **reintentar** un alta en `Fallida`. La secuencia ya es idempotente; falta el disparador
+- [x] **Comando `migrar-empresas` + endpoint de salud** que reporta quién quedó atrasado
+  (2026-08-25). Es un argumento de `Maquinaria.Api`, no un proyecto de consola aparte, y
+  `GET /api/plataforma/salud/esquemas` es lo que vuelve visible el desfase. Ver la sección
+  de abajo
+- [x] Endpoint para **reintentar** un alta en `Fallida` (2026-08-25):
+  `POST /api/plataforma/empresas/{slug}/reintento`. Corre el **mismo** código que el alta
+  —los pasos 2 a 6 extraídos a `EjecutarSecuenciaAsync`—, no una copia
 - [x] **Resolución de conexión por empresa**: `IDirectorioTenants` con caché, `IContextoTenant` de ámbito de petición, `MiddlewareTenant`, `FabricaConexionesEmpresa` y `ProveedorContextoEmpresa`. Ver [`01-arquitectura.md`](../01-arquitectura.md) §2.0
-- [x] Auth de **empresa**: invitaciones, login por `empresa / correo / contraseña` y **restablecimiento de contraseña** (2026-08-24). Falta solo el **endpoint de renovación**: el login ya emite y guarda la `sesion_refresh`, pero no hay nada que la rote
+- [x] Auth de **empresa**, completa (2026-08-25): invitaciones, login por `empresa / correo / contraseña`, **restablecimiento de contraseña** (2026-08-24) y **refresco rotativo** de la `sesion_refresh`
 - [x] **CORS por subdominio** y acceso desde el navegador (2026-08-24). Ver la sección de abajo
 - [x] Manejo global de errores (`IExceptionHandler` → ProblemDetails, sin filtrar mensajes de excepción al cliente) y health check `/salud` de la base central
 - [x] Auth de **plataforma**: PBKDF2, JWT con audiencia propia, policy de ámbito, limitador de intentos por IP, y siembra del primer superadministrador desde secretos
-- [ ] **Endpoint de refresco rotativo** de la sesión de empresa. La tabla `sesion_refresh` existe, el login la escribe y el restablecimiento la revoca; falta el `POST` que canjea un token de refresco por uno nuevo
+- [x] **Endpoint de refresco rotativo** de la sesión de empresa (2026-08-25):
+  `POST /api/empresas/{slug}/sesion/refresco`, anónimo, con detección de reuso que revoca
+  toda la cadena del usuario. Ver la sección de abajo, y en particular la trampa que
+  hereda el cliente: **la rotación no tiene ventana de gracia**
 - [ ] Logging estructurado con enriquecimiento por petición (falta el `correlacion_id` que compartirá con la auditoría)
 - [ ] Abstracción de almacenamiento de archivos con implementación en disco
 - [ ] Convenciones de equipo: ramas, commits, revisión, acceso a Neon (los remotos de GitHub ya están: `xYairrx/maquinaria-backend` y `xYairrx/maquinaria-frontend`, rama `develop`)
@@ -69,16 +95,52 @@
 
 Un superadministrador da de alta una empresa desde el panel, el sistema le crea y migra su base automáticamente, se envía la invitación al primer administrador, esa persona define su contraseña e inicia sesión con `empresa / correo / contraseña`. Y el comando `migrar-empresas` aplica una migración nueva a todas las bases existentes reportando el resultado por empresa.
 
+**Todas las piezas de ese enunciado existen en disco al 2026-08-25**, incluida la última que
+faltaba, `migrar-empresas`. Con dos salvedades que hay que decir en voz alta, porque «existe»
+y «demostrado» no son lo mismo:
+
+- **`migrar-empresas` no se ha corrido contra Neon.** La prueba de humo fue con las cadenas
+  apuntando a `127.0.0.1:1`, que verifica el cableado y el código de salida `2` y **no aplica
+  ninguna migración**. Hasta que el operador lo corra, `demo` y `bajio` siguen atrás.
+- **El envío de correo real no se ha ejercitado.** `CorreoResend` es el camino activo, pero
+  falta `Resend:Llave` y un dominio verificado, así que la invitación del criterio de salida
+  se ha probado con el proveedor de log y con la liga devuelta en la respuesta, que solo
+  funciona en Development.
+
+Y lo que queda abierto de la Fase 0 no está en el criterio de salida: es lo transversal
+—interceptor de auditoría, logging con `correlacion_id`, almacenamiento de archivos,
+`Dockerfile`, convenciones de equipo—. Se dice explícitamente para que nadie lea la lista de
+arriba y concluya que la fase está cerrada: **el criterio se cumple en código, la fase no**.
+
 ### Orden de trabajo
 
-Cerrados los pasos **7**, **8**, **11** y el **12** completo. El orden que sigue, revisado el 2026-08-24:
+Cerrados los pasos **7**, **8**, **9**, **10** y el **12** completo. Del **11** está hecha la
+resolución de conexión por empresa y falta el interceptor de auditoría, que es la otra mitad
+de ese paso. El orden que sigue, revisado el 2026-08-25:
 
-1. ~~Resolución de conexión por empresa.~~ **Hecha.**
-2. ~~Aprovisionamiento.~~ **Hecho**, salvo el endpoint de reintento.
-3. ~~Auth de empresa (el 12): invitación, definición de contraseña y login con slug.~~ **Hecha**, y con restablecimiento encima. Falta la renovación del token de refresco.
-4. **Comando `migrar-empresas`** (el 10) y el endpoint de salud que reporta quién quedó atrasado. **Sube a primer lugar**: `demo` y `bajio` ya están una migración atrás de `maquinaria_plantilla`, así que el desfase dejó de ser hipotético.
-5. **Interceptor de auditoría**, desbloqueado: ya hay contexto de petición autenticada de los dos lados —plataforma y empresa—, así que `usuario_id`, `roles`, `ip` y `origen` existen. Era el único bloqueante y ya no está.
-6. **Endpoint de refresco rotativo** y **endpoint de reintento** del alta en `Fallida`. Los dos son piezas pequeñas sobre mecánica que ya existe.
+1. **Interceptor de auditoría** (parte del paso 11). **Sube a primer lugar y es el único de
+   la secuencia de arranque que falta.** Está desbloqueado desde el 2026-08-24: hay contexto
+   de petición autenticada de los dos lados —plataforma y empresa—, así que `usuario_id`,
+   `roles`, `ip` y `origen` existen. Las dos tablas `auditoria` están construidas y vacías, y
+   siguen así mientras no exista el interceptor; lo que se audita hoy no se audita en ninguna
+   parte. Ojo con dos cosas ya escritas: la lista de propiedades excluidas —`hash_contrasena`
+   y los `hash_token` **nunca** entran al `jsonb`— y que los contextos que construye
+   `ProveedorContextoEmpresa` **no llevan interceptores** a propósito, así que el
+   aprovisionamiento y `migrar-empresas` seguirán sin auditar fila por fila.
+2. Lo transversal que queda de la fase, en el orden en que estorbe: logging estructurado con
+   `correlacion_id` —que es el puente con la auditoría, así que conviene justo después del
+   punto 1—, `IAlmacenamientoArchivos` con implementación en disco, el `Dockerfile` de
+   Railway y las convenciones de equipo.
+
+Lo que salió de esta lista el 2026-08-25:
+
+- ~~Resolución de conexión por empresa.~~ **Hecha.**
+- ~~Aprovisionamiento.~~ **Hecho**, y ahora también su reintento.
+- ~~Auth de empresa (el 12).~~ **Completa**: invitación, definición de contraseña, login con
+  slug, restablecimiento y refresco rotativo.
+- ~~Comando `migrar-empresas` (el 10) y el endpoint de salud.~~ **Hechos.** Era el punto de
+  mayor prioridad porque el desfase ya había dejado de ser hipotético.
+- ~~Endpoint de refresco rotativo y endpoint de reintento.~~ **Hechos.**
 
 El DDL de referencia está en [`05-esquema-fase0.md`](../05-esquema-fase0.md).
 
@@ -348,10 +410,9 @@ antes del `CREATE` —PostgreSQL no tiene `CREATE DATABASE IF NOT EXISTS`—, `M
 es, y el sembrador no duplica el usuario ni deja dos invitaciones válidas circulando:
 invalida las pendientes antes de emitir la nueva.
 
-**Lo que falta de esta pieza:** el endpoint que dispara el reintento. La secuencia es
-idempotente y el registro queda en `Fallida`, pero nada lo vuelve a llamar todavía. Y
-`CorreoResend` **no se ha ejercitado contra la API real**: hace falta la llave y un dominio
-verificado.
+**Lo que falta de esta pieza:** ~~el endpoint que dispara el reintento~~ — **hecho el
+2026-08-25**, ver la sección de abajo. Sigue faltando que `CorreoResend` se ejercite contra
+la API real: hace falta la llave y un dominio verificado.
 
 > **Al 2026-08-24:** `Correo:Proveedor` ya vale `"resend"`, así que el camino real es el que
 > corre. Lo que sigue faltando es el secreto `Resend:Llave` y el dominio verificado — sin
@@ -443,9 +504,13 @@ igualdad y prefijos — no `%excavadora%`. Ahora es
 `maquinaria_plantilla` está en `EmpresaCatalogosOrganizacion` y **`demo` y `bajio` siguen en
 `EmpresaPermisosModulosCompletos`**. Las dos empresas reales están una migración atrás.
 
-Es exactamente el escenario para el que existe `migrar-empresas`, y el comando **no está
-escrito**. Por ahora hay que aplicar a mano, base por base. Con dos empresas se aguanta;
-con veinte, no. Sube de prioridad.
+Es exactamente el escenario para el que existe `migrar-empresas`.
+
+> **Al 2026-08-25:** el comando que aquí se echaba en falta **ya está escrito** —ver la
+> sección de abajo— y con él el endpoint que hace visible el desfase. Lo que no ha cambiado
+> es el desfase en sí: `demo` y `bajio` **siguen una migración atrás** hasta que alguien
+> corra el comando contra Neon. Escribir la herramienta y usarla son dos cosas distintas, y
+> confundirlas es justo el tipo de mentira que esta bitácora existe para no contar.
 
 ### Alcance del primer entregable: se evaluó ampliarlo a venta y compra — 2026-08-21
 
@@ -701,21 +766,13 @@ Se arma con `UriBuilder` y no concatenando: el esquema y el puerto salen de
 `http://localhost:4200` da `http://bajio.localhost:4200` sin ningún caso especial.
 
 **Verificado el 2026-08-24: 29 pruebas nuevas** —9 en `VigenciaDeTokenPruebas` y 20 en
-`RestablecimientoPruebas`—, y `Maquinaria.Api.Tests` queda en **116 en total, todas en
-verde**. El reparto por archivo:
+`RestablecimientoPruebas`, las dos clases dentro de `RestablecimientoPruebas.cs`—, y ese día
+`Maquinaria.Api.Tests` quedó en **116 en total, todas en verde**.
 
-| Archivo | Casos |
-|---|---|
-| `RestablecimientoPruebas.cs` | 29 |
-| `FabricaConexionesEmpresaPruebas.cs` | 22 |
-| `OrigenesPermitidosPruebas.cs` | 22 |
-| `FormatoSlugPruebas.cs` | 21 |
-| `ContextoTenantPruebas.cs` | 11 |
-| `HashContrasenasPruebas.cs` | 10 |
-| `UnitTest1.cs` | 1 |
-
-`Maquinaria.Dominio.Tests` sigue con la prueba de plantilla que genera `dotnet new`: 1 caso
-y nada propio todavía.
+> Ese 116 es el total **de ese día** y ya no es el actual. El reparto vigente, con las 205
+> del 2026-08-25, está en [las cifras corregidas](#cifras-que-la-propia-bitácora-tenía-mal).
+> Se deja el número histórico y no se pisa: la bitácora registra cuándo se midió qué, y un
+> total sin fecha no vale nada.
 
 ---
 
@@ -744,7 +801,7 @@ Cuatro restricciones técnicas que el código debe respetar desde el día uno:
 
 ## Divergencias con los documentos de diseño
 
-Los documentos de [`docs/`](../) son especificación, no inventario. Diferencias reverificadas contra el disco el **2026-08-24**:
+Los documentos de [`docs/`](../) son especificación, no inventario. Diferencias reverificadas contra el disco el **2026-08-25**:
 
 | Documento dice | Realidad |
 |---|---|
@@ -752,17 +809,68 @@ Los documentos de [`docs/`](../) son especificación, no inventario. Diferencias
 | Contenedor en `Documents/Maquinaria/` | `OneDrive/Desktop/maquinaria/` |
 | Frontend en Angular 22 / CLI 22.1.4 | `@angular/core` `^21.2.0`, `@angular/cli` `^21.2.21` |
 | Checklist marca el andamiaje del backend como hecho | Se creó el 2026-08-20 |
+| `03-plan-desarrollo.md` §4 pone `migrar-empresas` como paso 10, entre las dos migraciones y el aprovisionamiento | Se escribió **después** del aprovisionamiento y del login de empresa, el 2026-08-25. El orden real fue 7 → 8 → 11 (conexión) → login → 9 → 12 → 10 |
+| `03-plan-desarrollo.md` §4 mete el interceptor de auditoría dentro del paso 11 | La resolución de conexión se cerró el 2026-08-21; el interceptor sigue pendiente. Son dos piezas con dependencias distintas y el documento las cuenta como una |
 
 Verifica siempre contra el repo antes de asumir que algo está hecho. **Cuando el documento y el código no coinciden, gana el código.**
+
+Las dos filas de `03-plan-desarrollo.md` se dejan como divergencia y no se corrigen en su
+documento a propósito: ese documento es **plan**, y el plan se cumplió en otro orden por
+razones que ya están registradas —el paso 11 resultó prerrequisito del 9, y el login de
+plataforma tuvo que ir antes del aprovisionamiento para poder protegerlo—. Reescribir el plan
+para que coincida con lo que pasó borraría la información de que el orden cambió y por qué.
+
+**Tres afirmaciones de `guias/convenciones.md` sí se corrigieron en su propio documento** el
+2026-08-25, porque ahí no eran plan sino descripción del sistema:
+
+1. **La auditoría con su `SaveChangesInterceptor`** figuraba como convención vigente. Las dos
+   tablas `auditoria` existen; el interceptor no. Queda marcado como la única fila de esa
+   tabla que describe algo que todavía no corre.
+2. **El refresh token en cookie `HttpOnly`.** Va **en el cuerpo JSON**, en el login y en el
+   refresco, y no hay ni una cookie en la API. El CORS ya está preparado para el cambio
+   —`SetIsOriginAllowed` en lugar de `AllowAnyOrigin`, justo para poder habilitar
+   `AllowCredentials`— pero el cambio no se ha hecho, así que mientras tanto lo que protege el
+   token es la rotación con detección de reuso y no el navegador.
+3. **`IAlmacenamientoArchivos` como algo que "existe por esto".** Solo se lo cita en
+   comentarios de otros archivos: no hay interfaz ni implementación. Y de paso, la misma regla
+   decía que faltaba la abstracción de correo, que sí existe desde el 2026-08-24.
 
 ### Cifras que la propia bitácora tenía mal
 
 Al reverificar el 2026-08-24 se corrigieron dos números que se habían escrito de memoria:
 
 - Las pruebas de CORS son **22 casos** (9 métodos con sus `InlineData`), no 12.
-- El total de `Maquinaria.Api.Tests` es **116**, y eso sí cuadra: se confirmó corriendo la
-  suite, no contando atributos a ojo. Un `[Theory]` con seis `InlineData` son seis pruebas
-  para el corredor y una sola para quien lee el archivo, y ahí es donde se cuela el error.
+- El total de `Maquinaria.Api.Tests` era **116** ese día, y se confirmó corriendo la suite,
+  no contando atributos a ojo. Un `[Theory]` con seis `InlineData` son seis pruebas para el
+  corredor y una sola para quien lee el archivo, y ahí es donde se cuela el error.
+
+**Y ese 116 quedó viejo al día siguiente.** El 2026-08-25 la suite está en **205**, medido
+con `dotnet test`. Es la corrección más fácil de olvidar de todas, porque el número no se
+rompe: simplemente deja de ser cierto y sigue leyéndose igual de bien. El reparto por
+archivo, que suma exactamente 205:
+
+| Archivo | Casos |
+|---|---|
+| `RestablecimientoPruebas.cs` | 29 |
+| `FabricaConexionesEmpresaPruebas.cs` | 22 |
+| `OrigenesPermitidosPruebas.cs` | 22 |
+| `FormatoSlugPruebas.cs` | 21 |
+| `RefrescoPruebas.cs` | 19 |
+| `FormatoCodigoPlanPruebas.cs` | 18 |
+| `ReintentoAltaPruebas.cs` | 18 |
+| `EstadoEsquemaPruebas.cs` | 15 |
+| `CrearPlanPruebas.cs` | 14 |
+| `ContextoTenantPruebas.cs` | 11 |
+| `HashContrasenasPruebas.cs` | 10 |
+| `CatalogoPlanesTraduccionPruebas.cs` | 5 |
+| `UnitTest1.cs` | 1 |
+
+Los 89 casos nuevos respecto al 24 salen de dos bloques del mismo 2026-08-25: **37** del
+catálogo de planes —`FormatoCodigoPlanPruebas` 18, `CrearPlanPruebas` 14,
+`CatalogoPlanesTraduccionPruebas` 5— y **52** de los tres bloques de abajo:
+`RefrescoPruebas` 19, `ReintentoAltaPruebas` 18 y `EstadoEsquemaPruebas` 15.
+`Maquinaria.Dominio.Tests` sigue con la prueba de plantilla que genera `dotnet new`: 1 caso y
+nada propio todavía.
 
 ## El catálogo de planes, y por qué no se puede editar — 2026-08-25
 
@@ -804,3 +912,310 @@ exigía que el plan estuviera activo.
 El alta de empresa manda `codigoPlan: 'base'` **fijo en el código**
 (`paginas/plataforma/empresas/empresas.ts`). Con el catálogo real, eso pasa a ser un selector
 alimentado por `GET /planes` filtrando por activos.
+
+## El comando `migrar-empresas` y la salud de esquemas — 2026-08-25
+
+El paso 10 del plan de arranque, y el que llevaba más tiempo siendo el más urgente: las
+migraciones de `ContextoEmpresa` se aplican **N veces, una por base**, y hasta hoy no había
+nada que las aplicara en bloque ni nada que dijera quién se había quedado atrás.
+
+Cómo se corre está en [puesta en marcha](../00-puesta-en-marcha.md#9-el-comando-migrar-empresas);
+aquí van las decisiones.
+
+**Es un argumento de `Maquinaria.Api`, no un proyecto de consola nuevo.** El comando necesita
+exactamente la misma configuración que la API —las dos cadenas de conexión, que viven en los
+*user secrets* de ese proyecto— y el mismo contenedor de DI. Un proyecto aparte serían otro
+`.csproj`, otro juego de secretos y dos registros de infraestructura que pueden divergir, a
+cambio de nada. Se ejecuta en `Program.cs` **antes** de configurar el pipeline: corre,
+imprime y termina sin abrir ningún puerto.
+
+**Va por la cadena directa**, `ConnectionStrings:Migraciones`, vía
+`ProveedorContextoEmpresa.ParaMigrar`. Es la misma razón de siempre: el endpoint *pooled*
+corre PgBouncer en modo transacción y por ahí no pasa DDL. Que el comando use el mismo camino
+de código que el aprovisionamiento no es casualidad, es lo que evita tener dos formas de
+llegar a la base de una empresa.
+
+**Resistente a fallos parciales, que es su razón de existir.** Que la empresa 23 truene no
+detiene a las que siguen, y no puede haber transacción que abarque varias bases porque son
+bases distintas. Lo que vuelve manejable el fallo parcial es que cada base lleva su propia
+`__EFMigrationsHistory` y que el historial es *append-only*: la que quedó atrás alcanza en la
+siguiente corrida.
+
+Los códigos de salida son la interfaz con un script de despliegue, así que son tres y no dos:
+
+| código | significa |
+|---|---|
+| `0` | todas al día |
+| `1` | al menos una falló — **las demás sí se migraron** |
+| `2` | no se pudo ni empezar (típicamente, la central no responde) |
+
+El reporte imprime una línea por empresa con `slug · estado · versiónAntes -> versiónDespués`,
+y cuando hubo fallos **repite los slugs al final** en una línea `QUEDARON ATRAS: …`. Eso no
+es adorno: con veinte empresas la línea del fallo se sale de la pantalla, y un reporte que
+esconde el fallo entre el ruido es un reporte que nadie lee.
+
+**La versión «antes» se lee de la base, no de la central.** Sale de la
+`__EFMigrationsHistory` de cada empresa. La base es la verdad; `tenant.version_esquema` es
+una copia, y si alguien aplicó una migración a mano esa copia está mal. Leyendo de la base, el
+comando además **corrige** la central en lugar de heredar su error.
+
+**No toca `estado_aprovisionamiento`.** Una empresa en `Fallida` sigue en `Fallida` después de
+migrarla. Es deliberado: `Fallida` significa «el alta no terminó» y migrar no es dar de alta,
+así que pisarlo esconderría un problema detrás del arreglo de otro. Las que no tienen base
+salen `OMITIDA` —con el motivo, que es *reintenta el aprovisionamiento, no la migración*— y
+**no cuentan** para el código de salida: si contaran, un tenant roto haría fallar el comando
+para siempre y el `0` dejaría de significar nada.
+
+### `GET /api/plataforma/salud/esquemas`
+
+Policy de plataforma, `WithName("SaludDeEsquemas")`. Devuelve `versionDisponible` una sola vez
+—es la misma para todas, porque es la del binario que responde—, `totalEmpresas`,
+`desfasadas`, y por empresa `versionAplicada`, `migracionesPendientes`, `desfasada` y
+`versionReconocida`.
+
+**No lleva `nombre_bd`**, igual que `ResumenEmpresa`: el panel no necesita el nombre de la
+base de un cliente para nada. El tipo interno `EmpresaConEsquema` **sí** lo lleva, porque el
+comando necesita a qué base conectarse, y precisamente por eso ese tipo **nunca sale por
+HTTP** — el caso de uso lo proyecta a `EstadoEsquemaEmpresa` antes de devolverlo. La
+proyección no es ceremonia; es lo que deja el nombre de la base dentro del servidor.
+
+### La decisión que merece explicarse: tres estados, no dos
+
+`ComparadorEsquema.Comparar` es **pura** —no toca ninguna base ni construye ningún contexto— y
+por eso es la única lógica no trivial de todo el bloque que se prueba sin Neon: 15 casos en
+`EstadoEsquemaPruebas`.
+
+Y reporta **tres** situaciones, no dos:
+
+| resultado | qué significa |
+|---|---|
+| al día | la versión aplicada es la última del código |
+| desfasada, con `migracionesPendientes` | falta aplicar N, y se sabe cuántas |
+| `versionReconocida: false` | **no se pudo comparar** |
+
+El tercero es el que importa. `versionReconocida: false` ocurre con `version_esquema` nula
+—el alta no llegó a migrar, o la base se creó por fuera— y también cuando la versión aplicada
+es una migración que **este binario no conoce**, es decir una base **por delante** del código
+desplegado: un despliegue revertido, o una empresa migrada desde otra rama. Ahí no se inventa
+un número de pendientes, porque no hay ninguno honesto que dar.
+
+Colapsar esto a un solo booleano `desfasada` es lo que uno escribe sin pensarlo, y esconde el
+caso peligroso detrás de un tranquilizador «está al día». Una base por delante del código es
+exactamente la situación en la que la API va a fallar con errores de columna inexistente, y es
+la que menos puede pasar desapercibida.
+
+### La limitación consciente, marcada en el código
+
+`SaludEsquemas` **lee `version_esquema` de la central y no se conecta a las bases de las
+empresas**. Está marcado `ponytail:` en el propio archivo.
+
+Consultar la `__EFMigrationsHistory` de N bases dentro de una petición HTTP son N conexiones y
+N puntos de falla, y el dato ya lo mantienen los **dos únicos** caminos que aplican
+migraciones: el aprovisionamiento y este comando. Consecuencia aceptada y escrita: si alguien
+migra a mano sin actualizar la central, **el reporte miente** hasta la siguiente corrida de
+`migrar-empresas`, que lo corrige. La simplificación se sostiene solo mientras esos dos
+caminos sigan siendo los únicos que escriben ese campo; el día que aparezca un tercero, esto
+hay que revisarlo.
+
+`ListarConEsquemaAsync` **excluye las empresas con baja lógica**, al contrario que
+`ListarAsync`: no hay que migrar la base de una empresa que ya no opera, y como el historial
+es *append-only*, si algún día vuelve, alcanza.
+
+### Fuera de alcance, dicho para que nadie lo busque
+
+No hay endpoint HTTP que dispare la migración —se corre desde la terminal—, es secuencial sin
+paralelismo, no hay `--solo <slug>` ni *dry-run*, y los logs de EF Core salen crudos a la
+consola. Todo eso es cómodo y ninguno hace falta con dos empresas; el paralelismo además
+querría pensarse dos veces contra un Postgres gestionado.
+
+### Cómo se probó sin tocar Neon
+
+Con las dos cadenas apuntando a `127.0.0.1:1`: el binario **reconoció el argumento, no abrió
+ningún puerto y salió con `2`**, que es exactamente el camino de «no se pudo ni empezar». Eso
+verifica el cableado —argumento, ámbito de DI, códigos de salida— sin aplicar **ninguna
+migración a ninguna base real**. La corrida de verdad la hace el operador en su terminal, y
+mientras no la haga, [el desfase sigue ahí](#el-desfase-de-esquema-dejó-de-ser-teórico).
+
+**Trampa de operación heredada:** si hay un proceso de `Maquinaria.Api` vivo, el build se
+bloquea con la DLL tomada. O se mata el proceso, o se compila una vez y se corre con
+`--no-build`. Es la [trampa ya documentada](#trampa-de-operación-dos-instancias-de-la-api-a-la-vez),
+y con este comando se pisa más seguido, porque uno lo lanza sin cerrar la API que tenía
+levantada.
+
+---
+
+## Refresco rotativo y reintento del alta — 2026-08-25
+
+Las dos piezas pequeñas que quedaban sobre mecánica ya construida. Salieron juntas, y una
+destapó a la otra: el reintento es lo que encontró el agujero de la sección siguiente.
+
+### `POST /api/empresas/{slug}/sesion/refresco`
+
+**Anónimo, y tiene que serlo:** se refresca precisamente porque el token de acceso ya caducó,
+así que exigir uno válido haría el endpoint inútil. Lo que autentica aquí es el token de
+refresco. Va en un **grupo aparte** del `/api/mi` por dos razones concretas: el slug tiene que
+ir en la ruta para que `MiddlewareTenant` resuelva la empresa —sin claim de tenant, resuelve
+por ruta, y eso es lo que garantiza que la sesión se busque en la base de **esa** empresa y no
+en otra— y para que el limitador pueda particionar. Reusa `EndpointsEmpresa.PoliticaAcceso`,
+10 por minuto por slug e IP: el token es un secreto de 256 bits que no se adivina, pero el
+endpoint es anónimo y escribe en la base.
+
+**La respuesta es idéntica en forma a la del login** —el mismo `SesionEmpresa`—, para que el
+cliente tenga un solo contrato de sesión y su interceptor pueda sustituir lo que tenía
+guardado sin traducir nada. Aprender un segundo contrato para lo mismo es como se acumulan los
+errores de sesión.
+
+**Un solo 401 para seis motivos**, sin decir cuál: token inexistente, caducado, revocado,
+reusado, usuario que ya no está activo, o empresa que no puede operar. Y un solo **tiempo**,
+con piso uniforme entre rechazos, por la misma razón que en el login y en el
+restablecimiento: distinguirlos le diría a quien prueba tokens y slugs cuáles existen.
+
+**Detección de reuso, y el orden de las comprobaciones es la decisión.** Un token con
+`reemplazado_por_id` no nulo dispara `RevocarSesionesDeAsync(usuarioId)` —**toda** la cadena
+del usuario, no solo esa sesión—. Un token ya canjeado solo puede llegar de dos sitios: una
+copia robada, o un cliente que perdió la respuesta de la rotación anterior. No se pueden
+distinguir, así que se trata como robo: el costo del falso positivo es un login, el del falso
+negativo es un atacante con acceso indefinido.
+
+Se comprueba **antes** de `RevocadoEn` porque una sesión rotada tiene **las dos** marcas
+puestas, y de las dos esta es la que significa «alguien está usando una copia». Si el orden se
+invirtiera, todo reuso se leería como un simple token revocado y la cadena no se cerraría
+nunca — el fallo silencioso perfecto.
+
+**Un token caducado NO dispara la cadena**, y hay una prueba que lo fija. Caducar no es señal
+de robo: es lo que le pasa a cualquiera que deja el navegador abierto un mes. Cerrarle todas
+las sesiones por eso convertiría la defensa en una molestia diaria, y las defensas molestas se
+acaban apagando.
+
+**Los permisos se vuelven a resolver, no se copian del token viejo.** Es lo que hace que
+revocar un permiso, cambiar un rol o retirar un módulo del plan surta efecto en 15 minutos —lo
+que dura el token de acceso— y no en 30 días. Y el **estado del usuario se comprueba aquí**:
+suspender a alguien tiene que cortarle el acceso sin esperar a que caduque su cadena.
+
+**`RefrescarAsync` vive en `IniciarSesionEmpresa.cs` y no en una clase nueva.** No hace falta
+ni una línea de DI nueva, y sobre todo: login y refresco comparten **cinco** cosas que no
+deben divergir —la resolución del tenant, la compuerta `permisos del rol ∩ módulos del plan`,
+la emisión del JWT, la vigencia del refresco y la forma de la respuesta—. Se extrajeron
+`ResolverCompuertaAsync`, `NuevaSesion` y `Emitir` para que haya **una sola copia** de la
+compuerta; el día que se ajuste una y se quede la otra atrás, «atrás» significa entregar
+permisos sobre módulos que la empresa no contrató. De paso, un `AddDays(30)` literal pasó a la
+constante `DiasVigenciaRefresco`.
+
+### La trampa que hereda el cliente: la rotación no tiene ventana de gracia
+
+Hay que dejarla escrita porque no es un defecto que se vaya a arreglar: es una propiedad del
+diseño con la que el cliente tiene que vivir.
+
+**Dos peticiones concurrentes con el mismo token cierran toda la sesión.** La segunda llega
+cuando la primera ya canjeó el token, se lee como reuso, y la detección hace exactamente lo
+que debe: revocar la cadena completa. Dos pestañas que despiertan a la vez, o un reintento
+automático sobre un *timeout*, bastan.
+
+Así que **el cliente está obligado a serializar sus refrescos**: un solo vuelo en curso y los
+demás esperando su resultado (*single-flight*). Ya está resuelto en el frontend. La
+alternativa —una ventana de gracia de unos segundos durante la cual el token viejo sigue
+sirviendo— compraría tolerancia a costa de volver ambigua la señal de reuso, que es la única
+defensa real contra un token robado. Se prefirió la señal nítida y la obligación en el
+cliente.
+
+### `POST /api/plataforma/empresas/{slug}/reintento`
+
+Bearer de plataforma. Vuelve a correr los pasos **2 a 6** del aprovisionamiento, que son los
+idempotentes: `ExisteBaseAsync` antes del `CREATE`, `Migrate()` que ya lo es de por sí, y un
+sembrador que reusa el usuario y no deja dos invitaciones vigentes.
+
+**Solo desde `Fallida`, y eso no es cortesía.** Reintentar sobre una empresa `Lista`
+reemitiría la invitación de su administrador, y quien tuviera acceso al panel podría tomar esa
+cuenta sin conocer su contraseña. Sobre una en `Creando` se solaparía con el intento que
+todavía corre.
+
+**La secuencia se extrajo a `EjecutarSecuenciaAsync`, compartida con el alta.** Si el
+reintento tuviera su propia copia, cualquier arreglo de la secuencia habría que hacerlo dos
+veces — y la segunda es la que se olvida.
+
+**Solo pide correo y nombre del administrador.** El resto ya está en la fila del tenant. El
+administrador se pide porque la central **no guarda a quién se invitó**: eso vive en la base
+de la empresa. Ojo con lo que se deriva de esto, que es el tema de la sección de abajo.
+
+**Revalida el formato del slug y que `nombre_bd` sea exactamente el derivado de él**, antes de
+que llegue a concatenarse en un `CREATE DATABASE`. Es la restricción 2 del aprovisionamiento:
+los identificadores SQL no se parametrizan. Que el valor venga de nuestra propia base central
+no exime de comprobarlo, porque **este es el único camino del sistema que parte de un
+`nombre_bd` ya almacenado en lugar de derivarlo de un slug recién validado**. Si no coincide,
+se rechaza y se registra: un registro inconsistente se revisa a mano, no se aprovisiona.
+
+**Los tres rechazos salen como 400**, no como 404 y 409 por separado, y está marcado
+`ponytail:` en el endpoint. Es un endpoint del panel, ya autenticado, y lo único que la
+interfaz hace con la respuesta es mostrar el texto del detalle; distinguir códigos no
+cambiaría una línea del frontend. Devuelve **200 y no 201**: el tenant ya existía antes de la
+llamada, así que no se creó ningún recurso nuevo.
+
+**Pruebas nuevas:** `RefrescoPruebas.cs` (19 casos) y `ReintentoAltaPruebas.cs` (18).
+
+---
+
+## El agujero del sembrador de administradores — 2026-08-25
+
+Lo más importante de la jornada, y no era una funcionalidad: era un fallo latente que llevaba
+tiempo en el código y que **solo se volvió alcanzable al escribir el endpoint de reintento**.
+Vale registrarlo completo, porque la lección no es sobre este error en particular.
+
+### Qué pasaba
+
+`SembradorAdministradorEf` recibía un correo y sembraba con él. Al reintentar un alta en
+`Fallida` **con un correo distinto al del administrador ya sembrado**, creaba una **segunda
+cuenta con acceso total** en la base de ese cliente, y mandaba la liga de invitación al correo
+que venía en la petición.
+
+Traducido: quien tuviera acceso al panel de superadministración podía **fabricarse una cuenta
+con acceso total dentro de la base de un cliente y definirle la contraseña**. Y lo peor de
+todo:
+
+> Esa cuenta **no aparece en la interfaz de asignaciones**, porque el rol `administrador` no
+> se asigna desde ahí — se otorga únicamente al aprovisionar.
+
+O sea que ni el propio administrador de la empresa tenía dónde verla. Una cuenta con acceso
+total, invisible en la única pantalla donde a alguien se le ocurriría buscarla.
+
+### El arreglo
+
+En `SembradorAdministradorEf.cs:25` se busca **primero** al usuario que ya tiene un rol con
+`acceso_total`. **Si existe, gana ese:** el correo recibido se ignora y lo que hace el
+reintento es reemitirle **su** invitación. Queda un `LogWarning` cuando los correos difieren,
+así que un intento —o un dedazo— deja rastro en lugar de pasar en silencio.
+
+Con eso la empresa mantiene **exactamente una persona con acceso total**, que es la garantía
+que sostiene todo este flujo y la que el esquema ya defendía por su lado con
+`UNIQUE INDEX rol_acceso_total_unico` y el trigger `rol_sistema_inmutable`. Ahí está el punto
+fino: la base impedía un segundo **rol** con acceso total, y nada impedía un segundo
+**usuario** con ese mismo rol. El motor cubría la mitad del invariante y la aplicación no
+cubría la otra.
+
+**Por eso `CrearAdministradorAsync` devuelve ahora `AdministradorSembrado(Correo, TokenEnClaro)`
+y no el token suelto.** No es un refactor cosmético: **el correo al que se manda la liga tiene
+que salir de ahí y no de la petición**. Mientras el llamador siguiera usando el correo de
+entrada, el arreglo del sembrador no serviría de nada — la cuenta correcta con la liga a la
+dirección equivocada es el mismo agujero con un paso más. El tipo de retorno es lo que impide
+reintroducirlo por descuido: ya no queda una variable con el correo de la petición a mano en el
+punto donde se arma el envío.
+
+### La lección, que es la parte reutilizable
+
+**Un endpoint nuevo sobre código idempotente no hereda solo su idempotencia: hereda también
+sus supuestos.** El sembrador se escribió asumiendo que el correo que recibía era el del alta
+—y en el alta lo es, porque el tenant se acaba de crear—. El reintento rompió ese supuesto sin
+tocar ni una línea del sembrador.
+
+Encaja con dos lecciones que ya estaban escritas en esta bitácora: *la base es la última línea
+de defensa, no la primera* —aquí ni eso, porque el `UNIQUE` protegía el rol y no el usuario— y
+*un mecanismo de protección hay que probarlo con todas las entradas que puede recibir, no solo
+con las obvias*. Es la tercera vez que el mismo tipo de error aparece con otra cara.
+
+### Lo que sigue abierto de esto
+
+La operación de **recuperación de acceso total** —nombrar a otro administrador cuando esa única
+persona se va— sigue **sin implementar**, como ya decía la sección de control de usuarios y
+permisos. Y ahora se sabe algo más sobre cómo tiene que ser: no puede ser un efecto colateral
+del reintento del alta, tiene que ser una operación explícita, con su propio nombre y su propia
+autorización, auditada con `origen = 'plataforma'`. Que es justo lo que **no se podrá auditar
+hasta que el interceptor exista** — otra razón para que sea lo siguiente.

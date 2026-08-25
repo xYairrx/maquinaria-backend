@@ -88,6 +88,15 @@ dotnet test tests/Maquinaria.Api.Tests --no-build
 
 Un `BaseOutputPath` único mete a **todos** los proyectos en la misma carpeta, los dos de prueba incluidos, y ahí un `testhost` vivo bloquea las DLL del otro. Fuera de ese caso el motivo es más simple: `dotnet test` reconstruye por su cuenta y vuelve a chocar con el proceso de la API. Compilar una sola vez y correr con `--no-build` evita las dos cosas.
 
+**Y aplica igual al comando `migrar-empresas`**, que se pisa más seguido porque uno lo lanza sin cerrar la API que tenía levantada. `dotnet run` compila antes de ejecutar, así que el fallo aparece en el build y **no** en la migración, aunque el mensaje no lo aclare:
+
+```bash
+dotnet build Maquinaria.slnx --nologo
+dotnet run --project src/Maquinaria.Api --no-build -- migrar-empresas
+```
+
+Ver [§9 de puesta en marcha](../00-puesta-en-marcha.md#9-el-comando-migrar-empresas).
+
 ---
 
 ## Ejecución y navegador
@@ -108,6 +117,16 @@ Lo que pasaba:
 **Solución adoptada:** no redirigir en desarrollo. En `Program.cs`, `app.UseHttpsRedirection()` va dentro de un `if (!app.Environment.IsDevelopment())`. En producción la redirección sigue activa, que es donde importa.
 
 **Alternativa igual de válida, descartada por un motivo concreto:** `dotnet dev-certs https --trust` y apuntar el frontend al 7020. Es más parecido a producción, pero exige un paso manual por máquina que nada verifica — y quien lo olvide pierde la tarde con un error que no habla de certificados.
+
+### Dos refrescos simultáneos cierran la sesión entera
+
+El refresco de la sesión de empresa es **rotativo y sin ventana de gracia**: al canjear un token, el viejo queda marcado con `reemplazado_por_id`. Si ese token vuelve a llegar, se lee como **reuso** y se revocan **todas** las sesiones del usuario, que es exactamente lo que debe pasar con una copia robada.
+
+El problema es que dos peticiones concurrentes con el mismo token producen la misma señal. La segunda llega cuando la primera ya lo canjeó. Basta con dos pestañas que despiertan a la vez, o con un reintento automático sobre un `timeout`, y el usuario aparece deslogueado sin ninguna explicación en la pantalla.
+
+**No es un defecto que se vaya a arreglar en el servidor:** una ventana de gracia volvería ambigua la única señal fiable de token robado. La obligación es del cliente, y es **serializar los refrescos** — un solo vuelo en curso y los demás esperando su resultado (*single-flight*). Ya está resuelto en el frontend; quien escriba otro cliente —una PWA, un script— tiene que hacer lo mismo.
+
+Y un detalle que ahorra media hora de diagnóstico: **el rechazo es siempre un 401 con el mismo texto** para seis motivos distintos, a propósito. El log del servidor sí distingue, y el reuso deja un `LogWarning` explícito. Si un cliente se desloguea sin razón aparente, ahí está la respuesta, no en el cuerpo del 401.
 
 ### Un subdominio nuevo no necesita tocar el archivo `hosts`
 

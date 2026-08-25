@@ -1,8 +1,8 @@
 # Puesta en marcha del entorno
 
-> Cómo llegar de una máquina vacía a un backend que compila.
+> Cómo llegar de una máquina vacía a un backend que compila, y cómo operarlo.
 > Sirve como guía para reconstruir el entorno y como bitácora de lo que ya se hizo.
-> Última actualización: 2026-08-19.
+> Última actualización: 2026-08-25 (se agregó §9, el comando `migrar-empresas`).
 
 ---
 
@@ -314,6 +314,11 @@ Resuelto actualizando a `Microsoft.AspNetCore.OpenApi 10.0.11` (que ya trae `Mic
 
 ## 7. Estado y pendientes
 
+> **Esta lista es una foto del 2026-08-19 y ya no es el inventario vigente.** Se conserva
+> porque documenta en qué punto quedó el andamiaje; el estado real, revisado contra el disco,
+> vive en [`guias/estado-y-pendientes.md`](guias/estado-y-pendientes.md). Cuando las dos
+> difieran, gana esa y gana el disco.
+
 **Hecho:**
 
 - [x] Neon: proyecto, rama `dev`, extensiones verificadas
@@ -331,7 +336,8 @@ Resuelto actualizando a `Microsoft.AspNetCore.OpenApi 10.0.11` (que ya trae `Mic
 - [ ] Remotos de GitHub para los dos repos
 - [ ] `ContextoCentral` + sus 5 entidades + primera migración (`05-esquema-fase0.md` §3)
 - [ ] `ContextoEmpresa` + sus 10 entidades + su migración (§4)
-- [ ] Servicio de aprovisionamiento y comando `migrar-empresas` (§5)
+- [x] Servicio de aprovisionamiento y comando `migrar-empresas` — **hechos**: el
+  aprovisionamiento el 2026-08-21, el comando el 2026-08-25. Cómo correrlo, en §9
 - [ ] Convenciones de trabajo en equipo: ramas, commits, revisión, acceso a Neon
 
 ---
@@ -413,3 +419,89 @@ dotnet ef migrations list --context ContextoCentral --project src/Maquinaria.Inf
 ```
 
 No hay que volver a correr el andamiaje ni recrear las bases: eso ya vive en el repositorio y en Neon.
+
+---
+
+## 9. El comando `migrar-empresas`
+
+Las migraciones de `ContextoEmpresa` se aplican **N veces, una por base de empresa**, así que
+`dotnet ef database update` no alcanza: ese comando conoce una sola cadena de conexión. Quien
+recorre todas las bases registradas es este comando, y hay que correrlo **después de cada
+migración nueva de `ContextoEmpresa`**.
+
+Es un **argumento de `Maquinaria.Api`**, no un ejecutable aparte: necesita las mismas dos
+cadenas de conexión que la API, y esas viven en los *user secrets* de ese proyecto. Corre,
+imprime el reporte y termina; no abre ningún puerto.
+
+```powershell
+dotnet run --project src\Maquinaria.Api -- migrar-empresas
+```
+
+**Si hay un proceso de `Maquinaria.Api` vivo, esto falla en el build** —no en la migración—
+porque el proceso tiene tomadas las DLL. Es la trampa conocida de las dos instancias. Salida:
+matarlo, o compilar una vez y correr sin volver a compilar:
+
+```powershell
+Get-Process -Name Maquinaria.Api | Select-Object Id, StartTime
+```
+
+```powershell
+dotnet build Maquinaria.slnx --nologo
+dotnet run --project src\Maquinaria.Api --no-build -- migrar-empresas
+```
+
+### Qué hay que tener configurado
+
+`ConnectionStrings:Migraciones`, la cadena **directa, sin `-pooler`**. Las migraciones y el
+`CREATE DATABASE` del aprovisionamiento no pasan por PgBouncer en modo transacción. Es el
+mismo secreto que ya exige `dotnet ef`, así que si el entorno está montado según §8 no hay
+nada nuevo que poner.
+
+### Cómo se lee el reporte
+
+Una línea por empresa, con la etiqueta del desenlace y el salto de versión
+`versiónAntes -> versiónDespués`. La versión «antes» **se lee de la
+`__EFMigrationsHistory` de cada base**, no de la central, así que el salto que imprime es el
+real incluso si la central estaba desincronizada.
+
+| etiqueta | qué pasó |
+|---|---|
+| `OK (migrada)` | se aplicó lo que faltaba |
+| `OK (sin cambios)` | ya estaba al día. Migrar es idempotente |
+| `OMITIDA` | **no existe su base de datos.** Lo que hay que reintentar es el aprovisionamiento, no la migración. No cuenta para el código de salida |
+| `FALLO` | tronó, con el motivo debajo. **Las demás empresas sí se migraron** |
+
+El comando **no toca `estado_aprovisionamiento`**: una empresa en `Fallida` sigue en `Fallida`
+después de migrarla. Migrar no es dar de alta, y pisar ese estado esconderría un problema
+detrás del arreglo de otro.
+
+Cuando hubo fallos, el reporte termina con una línea `QUEDARON ATRAS: <slugs>`, repetida a
+propósito: con veinte empresas la línea del fallo se sale de la pantalla.
+
+### Códigos de salida, para un script de despliegue
+
+| código | significa | qué hacer |
+|---|---|---|
+| `0` | todas al día | nada |
+| `1` | al menos una falló; **las demás sí se migraron** | ver el motivo de las que salen en `QUEDARON ATRAS`, arreglar y volver a correr — es seguro repetirlo |
+| `2` | no se pudo ni empezar (la base central no responde) | revisar la cadena y el estado de Neon. **Ninguna base se tocó** |
+
+Volver a correrlo siempre es seguro: `Migrate()` es idempotente y solo aplica lo que falta.
+
+### Y para ver quién está atrasado sin migrar nada
+
+```
+GET /api/plataforma/salud/esquemas
+```
+
+Bearer de plataforma. Da la versión disponible en el código, cuántas empresas quedaron
+desfasadas y el detalle por empresa. Ojo con un detalle que importa al interpretarlo: **lee
+`tenant.version_esquema` de la base central, no se conecta a las bases de las empresas**. Si
+alguien aplicó una migración a mano sin actualizar la central, el reporte miente hasta la
+siguiente corrida de `migrar-empresas` — que es justamente la que lo corrige, porque el
+comando lee la versión real de cada base.
+
+Y `versionReconocida: false` no significa «al día»: significa **no se pudo comparar**, sea
+porque no hay versión registrada o porque la base tiene una migración que este binario no
+conoce, o sea una base **por delante** del código desplegado. El razonamiento completo está en
+[la bitácora](guias/estado-y-pendientes.md#el-comando-migrar-empresas-y-la-salud-de-esquemas--2026-08-25).

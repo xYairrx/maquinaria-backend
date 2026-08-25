@@ -132,6 +132,7 @@ Son decisiones de negocio, no técnicas, pero condicionan el desarrollo:
 | Región de despliegue | Datos de empresas mexicanas: conviene alojarlos en México o EE. UU. por latencia y por conversaciones de cumplimiento con clientes grandes |
 | **Licencia perpetua** | Confirmado que se venderá también como copia permanente, no solo suscripción. Falta definir: ¿incluye hospedaje nuestro, instancia dedicada, o instalación en su infraestructura? ¿Lleva cuota anual de mantenimiento? ¿Cuántas versiones atrás se soportan? Las reglas de arquitectura que esto impone están en `01-arquitectura.md` §11 |
 | **Alta de usuarios** | Confirmado: no hay registro público. Nosotros creamos el tenant y su primer administrador; ese administrador da de alta al resto de su empresa. Falta definir si el permiso `usuarios.crear` viene activo desde el inicio o se habilita después |
+| **Recuperación de acceso total** | Cada empresa tiene **exactamente una** persona con acceso total, y si esa persona se va, solo la plataforma puede nombrar otra. Esa operación no existe todavía y hace falta decidir su forma: ¿la pide el cliente por soporte y la ejecutamos nosotros, o hay un botón en el panel? ¿Con qué doble comprobación, siendo que crea una cuenta con acceso total dentro de la base de un cliente? Subió de prioridad el **2026-08-25**, cuando el reintento del alta destapó que ese poder existía sin querer y sin control; ver `guias/estado-y-pendientes.md`. Es la decisión más delicada de la relación con un cliente, porque del lado técnico ya está claro que **no puede colgarse de ningún otro flujo** |
 
 ---
 
@@ -145,8 +146,8 @@ Son decisiones de negocio, no técnicas, pero condicionan el desarrollo:
 | Concurrencia en la reserva de equipos | Resuelto por el constraint `EXCLUDE` a nivel de motor |
 | Una consulta pesada de un tenant afecta a todos | Límites de statement timeout por rol, pool separado para reportes |
 | Fuga de datos entre tenants | Base de datos independiente por empresa: el aislamiento es físico |
-| Migraciones desalineadas entre bases | `tenant.version_esquema` + endpoint de salud que reporte quién quedó atrasado. Nunca aplastar migraciones |
-| Aprovisionamiento a medias (registro sin base) | `tenant.estado_aprovisionamiento` deja el registro reintentable en lugar de huérfano |
+| Migraciones desalineadas entre bases | **Mitigado el 2026-08-25**: el comando `migrar-empresas` recorre todas las bases y es resistente a fallos parciales, y `GET /api/plataforma/salud/esquemas` reporta quién quedó atrasado. Sigue en pie la regla de nunca aplastar migraciones, que es lo que permite que la base que quedó atrás alcance |
+| Aprovisionamiento a medias (registro sin base) | **Mitigado el 2026-08-25**: `tenant.estado_aprovisionamiento` ya dejaba el registro reintentable, y ahora existe quien lo reintenta — `POST /api/plataforma/empresas/{slug}/reintento`, que corre el mismo código del alta y solo actúa desde `Fallida` |
 
 ---
 

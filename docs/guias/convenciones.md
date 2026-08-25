@@ -19,7 +19,7 @@
 | Índices | Prefijo `ix_`, y parciales con `WHERE eliminado_en IS NULL` donde aplique |
 | Casos de uso | Clases con un método `Ejecutar`, registradas en DI |
 | Permisos | Cadenas `modulo.accion`: `equipos.editar`, `rentas.autorizar` |
-| Auditoría | `SaveChangesInterceptor` de EF Core que escribe en `auditoria` con `jsonb` |
+| Auditoría | `SaveChangesInterceptor` de EF Core que escribe en `auditoria` con `jsonb`. **Es la única fila de esta tabla que describe algo que todavía no corre**: las dos tablas `auditoria` están construidas y el interceptor no existe (verificado el 2026-08-25) |
 | Terminal | PowerShell |
 
 Tres decisiones que parecen arbitrarias y no lo son:
@@ -64,13 +64,17 @@ Después de un release, jamás. Una empresa puede estar dos versiones atrás y t
 
 Corolario operativo: como las migraciones de `ContextoEmpresa` se aplican **N veces**, una por base, hace falta `tenant.version_esquema`, el comando `migrar-empresas` resistente a fallos parciales, y un endpoint de salud que reporte quién quedó atrasado. Sin ese endpoint el desfase es invisible hasta que algo truena.
 
+**Los tres existen desde el 2026-08-25.** Cómo se corre el comando está en [§9 de puesta en marcha](../00-puesta-en-marcha.md#9-el-comando-migrar-empresas); el endpoint es `GET /api/plataforma/salud/esquemas`. La obligación que esto crea es de proceso y no de código: **toda migración nueva de `ContextoEmpresa` termina con una corrida del comando**, porque escribir la herramienta no migra ninguna base.
+
 ### 3. Una sola base de código
 
 Nunca un fork "para on-premise". La diferencia entre modalidades es **configuración, no código**.
 
 ### 4. Toda dependencia de la nube va detrás de una abstracción
 
-`IAlmacenamientoArchivos` existe por esto, con `AlmacenamientoDisco` para desarrollo y `AlmacenamientoS3` para producción. **Falta la abstracción equivalente para envío de correo**: un cliente on-premise usará su propio SMTP.
+`IAlmacenamientoArchivos` está previsto por esto, con `AlmacenamientoDisco` para desarrollo y `AlmacenamientoS3` para producción — **previsto, no escrito**: al 2026-08-25 solo se lo cita en comentarios, y sigue en la lista de pendientes de la Fase 0.
+
+La abstracción equivalente para el correo **ya existe** (2026-08-24): `IEnviadorCorreo`, con `CorreoEnLog` para desarrollo y `CorreoResend` para la nube, elegido por `Correo:Proveedor`. Un cliente on-premise usará su propio SMTP y ese es el hueco que la interfaz deja abierto.
 
 Ninguna instalación puede depender de un servicio central nuestro para funcionar. Esa es la razón definitiva por la que no hay un servicio de identidad central: un SSO hospedado por nosotros haría imposible el on-premise.
 
@@ -148,3 +152,5 @@ El login pide tres campos: **empresa (el slug), correo y contraseña**. Tres reg
 - **Límite de intentos** por combinación de slug + correo, y por IP.
 
 El refresh token va en cookie `HttpOnly`, nunca en `localStorage`, donde cualquier XSS lo robaría.
+
+> **Al 2026-08-25 esto es la regla, no el estado.** `SesionEmpresa` devuelve `TokenRefresco` **en el cuerpo JSON**, tanto en el login como en el refresco rotativo, y no hay ni una cookie en la API. La mecánica ya está preparada del lado del CORS —se usa `SetIsOriginAllowed` y no `AllowAnyOrigin` precisamente para poder habilitar `AllowCredentials`—, pero el cambio a cookie **está sin hacer**, y hasta entonces la protección real contra el robo del token es la rotación con detección de reuso, no el navegador. Es una divergencia consciente, no un olvido: se anotó al escribir el refresco.

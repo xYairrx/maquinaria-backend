@@ -9,7 +9,7 @@ SaaS multi-tenant para empresas de renta de maquinaria y equipo.
 
 | Documento | Qué contiene | Cuándo leerlo |
 |---|---|---|
-| [00-puesta-en-marcha.md](00-puesta-en-marcha.md) | Herramientas, versiones, Neon, comandos ejecutados, problemas y soluciones. **§8: arrancar en otra máquina** | Al montar el entorno, al reconstruirlo o al clonar en una máquina nueva |
+| [00-puesta-en-marcha.md](00-puesta-en-marcha.md) | Herramientas, versiones, Neon, comandos ejecutados, problemas y soluciones. **§8: arrancar en otra máquina. §9: el comando `migrar-empresas`** | Al montar el entorno, al reconstruirlo, al clonar en una máquina nueva o al aplicar una migración nueva a las bases de empresa |
 | [01-arquitectura.md](01-arquitectura.md) | Stack, multi-tenancy con base por empresa, capas, convenciones de BD, permisos, despliegue | Antes de tomar cualquier decisión técnica |
 | [02-modelo-datos.md](02-modelo-datos.md) | ~75 entidades de los 26 módulos, decisiones estructurales, dónde vive cada regla | Antes de agregar una entidad o tabla |
 | [03-plan-desarrollo.md](03-plan-desarrollo.md) | Método de rebanadas verticales, fases 0 a 6, desglose de arranque | Al planear qué sigue |

@@ -4,7 +4,7 @@ API del **Sistema Integral de Operación y Rentabilidad de Activos**: un SaaS mu
 
 Repo hermano del frontend: [`maquinaria-frontend`](https://github.com/xYairrx/maquinaria-frontend) (Angular).
 
-> **Estado: solo andamiaje.** Compila y corre, pero todavía no hay entidades ni endpoints de negocio. Ver [estado y pendientes](docs/guias/estado-y-pendientes.md).
+> **Estado: Fase 0 casi cerrada.** El esquema multi-tenant está en pie —9 tablas en la base central y 19 en la de empresa—, una empresa se da de alta desde el panel y el sistema le crea y migra su base sola, el ciclo de credenciales está completo (invitación, login por subdominio, restablecimiento y refresco rotativo) y el catálogo comercial se administra desde la API. Falta el interceptor de auditoría, el `Dockerfile` de Railway, el logging con `correlacion_id` y el almacenamiento de archivos. Ver [estado y pendientes](docs/guias/estado-y-pendientes.md).
 
 ## Stack
 
@@ -13,7 +13,7 @@ Repo hermano del frontend: [`maquinaria-frontend`](https://github.com/xYairrx/ma
 | API | .NET 10 (LTS), Minimal APIs | Railway (contenedor Docker) |
 | ORM | EF Core 10 + Npgsql, Code-First | — |
 | Base de datos | PostgreSQL 18 | Neon (gestionado) |
-| Archivos | S3-compatible vía `IAlmacenamientoArchivos` | Cloudflare R2 |
+| Archivos | S3-compatible — **todavía sin construir**, ni interfaz ni implementación | Cloudflare R2 |
 | Auth | JWT propio + refresh token rotativo | — |
 | Pruebas | xUnit | — |
 

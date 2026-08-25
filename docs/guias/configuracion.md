@@ -24,7 +24,12 @@ Pero dar de alta una empresa implica `CREATE DATABASE` y correr migraciones, y e
 | Endpoint | Clave | Uso |
 |---|---|---|
 | **Con** `-pooler` en el host | `ConnectionStrings:Central` | Runtime de la API |
-| **Sin** `-pooler` (directo) | `ConnectionStrings:Migraciones` | Migraciones y el `CREATE DATABASE` del aprovisionamiento |
+| **Sin** `-pooler` (directo) | `ConnectionStrings:Migraciones` | Migraciones, el `CREATE DATABASE` del aprovisionamiento y el comando `migrar-empresas` |
+
+> **La cadena directa no es solo para `dotnet ef`.** La necesitan tres caminos en tiempo de
+> ejecución: el aprovisionamiento de una empresa, el reintento de un alta y el comando
+> `migrar-empresas` —ver [§9 de puesta en marcha](../00-puesta-en-marcha.md#9-el-comando-migrar-empresas)—.
+> Consecuencia para el despliegue: **Railway tiene que llevar las dos cadenas**, no una.
 
 El endpoint pooled corre **PgBouncer en modo transacción**: la conexión física vuelve al pool al terminar cada transacción, lo que descarta todo estado de sesión (`SET`, tablas temporales, `LISTEN/NOTIFY`) y también el DDL.
 
@@ -147,6 +152,7 @@ Lo que vive en `appsettings.json` y se commitea a propósito. Los valores de la 
 | `Jwt:AudienciaPlataforma` | `maquinaria-plataforma` | — | Tokens de superadministrador |
 | `Jwt:AudienciaEmpresa` | `maquinaria-empresa` | — | Tokens de usuario de empresa |
 | `Jwt:MinutosPlataforma` | `60` | — | Larga porque la plataforma no tiene refresco |
+| `Jwt:MinutosEmpresa` | `15` | — | Corta **porque la empresa sí tiene refresco rotativo**. Es la ventana durante la cual un permiso revocado sigue surtiendo efecto: el refresco vuelve a resolver la compuerta, así que subirla alarga ese hueco. No está en `appsettings.json`; el valor vive en `OpcionesJwt` |
 | `Correo:Proveedor` | `resend` | — | `log` o `resend` |
 | `Correo:Remitente` | `onboarding@resend.dev` | — | Debe ser de un dominio verificado |
 | `Correo:UrlBaseAplicacion` | `http://localhost:4200` | — | Base de las ligas. El slug se le inserta en el **host** |

@@ -70,7 +70,7 @@ Nunca un fork "para on-premise". La diferencia entre modalidades es **configurac
 
 ### 4. Toda dependencia de la nube va detrás de una abstracción
 
-`IAlmacenamientoArchivos` existe por esto, con `AlmacenamientoDisco` para desarrollo y `AlmacenamientoS3` para producción. **Falta la abstracción equivalente para envío de correo**: un cliente on-premise usará su propio SMTP.
+`IAlmacenamientoArchivos` existe por esto, con `AlmacenamientoDisco` para desarrollo y `AlmacenamientoS3` para producción. `IEnviadorCorreo` ya cumple lo mismo para el correo, con `CorreoEnLog` en desarrollo y `CorreoResend` en producción — **falta la implementación SMTP**, que es la que necesitará un cliente on-premise.
 
 Ninguna instalación puede depender de un servicio central nuestro para funcionar. Esa es la razón definitiva por la que no hay un servicio de identidad central: un SSO hospedado por nosotros haría imposible el on-premise.
 

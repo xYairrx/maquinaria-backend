@@ -88,9 +88,17 @@ Al ser SaaS, cada empresa suscrita factura con **sus propios** certificados CSD 
 
 Es la decisión de mayor riesgo legal del producto. Vale la pena asesoría fiscal antes de diseñarlo.
 
-### 2.4 ~~Renta con operador~~ — resuelto el 2026-08-24
+### 2.4 Renta con operador — **REABIERTO el 2026-08-24**
 
-**La renta es unicamente de equipo. No incluye operador.** Decision del negocio.
+> **Ojo con el historial de esta seccion.** El mismo dia se cerro con *"la renta es unicamente de equipo"* y se reabrio horas despues: **la renta SI puede incluir operador**. Lo que sigue vigente es la decision nueva.
+
+**Alcance acotado, y eso es lo que lo hace viable:** se registra **quien va como operador** —un `trabajador`, con su puesto— y **cuanto se le cobra al cliente**. No se controlan jornadas, horas extra ni costo de mano de obra, asi que no se entra en terreno laboral.
+
+Encaja limpio con el modelo de tarifas: el operador es **una linea de la renta con tarifa de operador**, mas el trabajador que va. No necesita tabla propia.
+
+Lo que sigue pendiente si algun dia se quiere el control completo: costo de mano de obra, jornadas y horas extra — o sea, calcular el margen real del servicio.
+
+#### Planteamiento original
 
 Eso cierra la pregunta de si rentar con operador era un producto distinto —con costo de
 mano de obra, control de jornadas, horas extra y obligaciones laborales— y quita esa

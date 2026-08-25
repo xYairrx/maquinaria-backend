@@ -1,5 +1,8 @@
-﻿using Maquinaria.Dominio.Archivos;
+﻿using Maquinaria.Dominio.Activos;
+using Maquinaria.Dominio.Archivos;
 using Maquinaria.Dominio.Catalogos;
+using Maquinaria.Dominio.Comercial;
+using Maquinaria.Dominio.Compras;
 using Maquinaria.Dominio.Organizacion;
 using Maquinaria.Dominio.Terceros;
 using Maquinaria.Dominio.Configuracion;
@@ -51,15 +54,63 @@ public class ContextoEmpresa : DbContext
 
     public DbSet<ModeloEquipo> ModelosEquipo => Set<ModeloEquipo>();
 
-    public DbSet<Sucursal> Sucursales => Set<Sucursal>();
-
     public DbSet<Ubicacion> Ubicaciones => Set<Ubicacion>();
+
+    public DbSet<Tarifa> Tarifas => Set<Tarifa>();
+
+    public DbSet<Clausula> Clausulas => Set<Clausula>();
 
     public DbSet<Puesto> Puestos => Set<Puesto>();
 
     public DbSet<Trabajador> Trabajadores => Set<Trabajador>();
 
     public DbSet<Proveedor> Proveedores => Set<Proveedor>();
+
+    public DbSet<Cliente> Clientes => Set<Cliente>();
+
+    // ------------------------------------------------- Fase 1: activos --
+    public DbSet<Equipo> Equipos => Set<Equipo>();
+
+    public DbSet<EquipoArchivo> EquipoArchivos => Set<EquipoArchivo>();
+
+    public DbSet<EquipoTarifa> EquipoTarifas => Set<EquipoTarifa>();
+
+    public DbSet<TransferenciaEquipo> TransferenciasEquipo => Set<TransferenciaEquipo>();
+
+    /// <summary>
+    /// El calendario de cada maquina. Es la tabla que impide rentar dos veces las
+    /// mismas fechas, y lo hace con una restriccion EXCLUDE en el motor.
+    /// </summary>
+    public DbSet<OcupacionEquipo> OcupacionesEquipo => Set<OcupacionEquipo>();
+
+    // ----------------------------------------------- Fase 1: comercial --
+    public DbSet<Cotizacion> Cotizaciones => Set<Cotizacion>();
+
+    public DbSet<CotizacionLinea> CotizacionLineas => Set<CotizacionLinea>();
+
+    public DbSet<Renta> Rentas => Set<Renta>();
+
+    public DbSet<RentaLinea> RentaLineas => Set<RentaLinea>();
+
+    public DbSet<RentaConcepto> RentaConceptos => Set<RentaConcepto>();
+
+    public DbSet<ExtensionRenta> ExtensionesRenta => Set<ExtensionRenta>();
+
+    /// <summary>
+    /// Inmutable en cuanto sale de borrador. Lo impone un disparador, no la aplicacion.
+    /// </summary>
+    public DbSet<Contrato> Contratos => Set<Contrato>();
+
+    public DbSet<ContratoClausula> ContratoClausulas => Set<ContratoClausula>();
+
+    public DbSet<OrdenVenta> OrdenesVenta => Set<OrdenVenta>();
+
+    public DbSet<OrdenVentaDetalle> OrdenVentaDetalles => Set<OrdenVentaDetalle>();
+
+    // ------------------------------------------------- Fase 1: compras --
+    public DbSet<OrdenCompra> OrdenesCompra => Set<OrdenCompra>();
+
+    public DbSet<OrdenCompraDetalle> OrdenCompraDetalles => Set<OrdenCompraDetalle>();
 
     // ---------------------------------------------------------- Fase 0 --
     public DbSet<Parametro> Parametros => Set<Parametro>();

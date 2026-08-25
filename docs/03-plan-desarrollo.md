@@ -41,11 +41,18 @@ Sin esto, todo lo demás se construye sobre arena. Es la fase más importante y 
 
 Equipos con expediente, clientes, obras, tarifas, sucursales y ubicaciones, disponibilidad con el constraint de exclusión, cotizaciones y rentas.
 
-> **Alcance precisado el 2026-08-24**, con dos cosas que el documento funcional no contempla y una que sí y se acota:
+> **El alcance detallado vive en [`06-alcance-fase1.md`](06-alcance-fase1.md), y manda sobre lo que sigue.**
+> Lo de abajo es el resumen; ese documento tiene las decisiones con su historial y el inventario de tablas.
+>
+> Resumen de lo acordado hasta el 2026-08-25:
 >
 > - **Trabajadores y puestos** — **no están en la especificación**. Un trabajador es una *persona* con un puesto; un usuario es una *cuenta*. El operador de patio puede no tener acceso al sistema, y hay que poder registrarlo igual.
-> - **Ubicaciones, no solo patios.** El documento dice "sucursales y patios"; el negocio también tiene bodegas y talleres. Se modela como `ubicacion` dentro de la sucursal, con un `tipo`.
-> - **La renta es solo de equipo, sin operador** (cierra §2.4 de `04-pendientes.md`). **El flete sí se cobra dentro de la renta** — como cargo con precio y costo, para poder calcular margen — pero vehículos, operadores, rutas y estados de entrega siguen siendo M8 en la Fase 2.
+> - **Ubicaciones: tres tipos de sitio al mismo nivel**, no una jerarquía. `bodega` guarda máquinas; `sucursal` administra y cotiza; `patio` hace las dos cosas. Las dos capacidades se **derivan** del tipo, así que una "bodega que cotiza" es imposible de escribir.
+> - **La renta PUEDE incluir operador** — un `trabajador` con su puesto — pero solo se registra *quién va* y *cuánto se cobra*, sin jornadas ni horas extra. Esto **reabre §2.4 de `04-pendientes.md`**, que se había cerrado como "solo equipo" unas horas antes.
+> - **El flete se cotiza sobre la renta.** Vehículos, rutas y estados de entrega siguen siendo M8 en la Fase 2.
+> - **Compra y venta de equipo entran al primer entregable**, con un proceso deliberadamente corto: orden → autorizar → finalizar. Al finalizar, la compra **registra el equipo en el catálogo** y lo pone a disposición de renta o de venta.
+> - **Los contratos también entran**, con un **catálogo de cláusulas** cuyo texto se congela al generar cada contrato. Eran M6 y estaban en la Fase 2.
+> - **Las tarifas son un catálogo de conceptos cobrables** —renta diaria, mantenimiento, flete, operador, maniobras— y una renta o una venta puede arrastrar varias. El *precio* no vive en el catálogo: vive por equipo y con vigencia.
 > - **Reservar solo desde usuarios internos.** Sin portal de cliente, lo que pospone la decisión de §6.1 de `05-esquema-fase0.md` sobre cómo filtrar filas por cliente dentro de una empresa.
 
 **Criterio de salida:** el ciclo completo cotizar → aprobar → rentar → cerrar funciona, y es imposible rentar dos veces el mismo equipo en fechas traslapadas.

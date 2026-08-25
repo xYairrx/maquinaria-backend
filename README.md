@@ -106,6 +106,8 @@ El diseño completo vive en [`docs/`](docs/) y es la fuente de la verdad sobre e
 | [`00-puesta-en-marcha.md`](docs/00-puesta-en-marcha.md) | Herramientas, versiones, Neon, problemas y soluciones |
 | [`01-arquitectura.md`](docs/01-arquitectura.md) | Stack, multi-tenancy, capas, auth, despliegue, contrato con el frontend |
 | [`02-modelo-datos.md`](docs/02-modelo-datos.md) | Las ~75 entidades de los 26 módulos y sus reglas |
+| [`06-alcance-fase1.md`](docs/06-alcance-fase1.md) | **El alcance del primer entregable** y su inventario de tablas |
+| [`06-esquema-fase1.sql`](docs/06-esquema-fase1.sql) | El DDL completo de las 31 tablas de Fase 1 |
 | [`especificacion-funcional.md`](docs/especificacion-funcional.md) | El texto de la especificación del negocio, extraído del `.docx` |
 | [`03-plan-desarrollo.md`](docs/03-plan-desarrollo.md) | Fases y orden de tareas |
 | [`04-pendientes.md`](docs/04-pendientes.md) | Decisiones abiertas y riesgos |

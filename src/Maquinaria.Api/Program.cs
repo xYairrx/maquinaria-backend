@@ -151,6 +151,17 @@ builder.Services.AddAuthorizationBuilder()
 
 var app = builder.Build();
 
+// ------------------------------------------------------------------ comandos --
+// Antes de armar la tuberia HTTP: si se invoco un comando, se ejecuta y se sale.
+//
+// Corre con EL MISMO contenedor que la aplicacion, asi que usa la misma resolucion de
+// conexiones. Un comando con su propio arranque seria un segundo camino de codigo que
+// puede divergir del que corre en produccion.
+if (args.Length > 0 && args[0] == ComandoMigrarEmpresas.Nombre)
+{
+    return await ComandoMigrarEmpresas.EjecutarAsync(app, args);
+}
+
 app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
@@ -198,10 +209,13 @@ app.MapearEmpresas();
 app.MapearPlanes();
 app.MapearAccesoEmpresa();
 app.MapearSesionEmpresa();
+app.MapearEsquema();
 
 await app.SembrarSuperadminAsync();
 
 app.Run();
+
+return 0;
 
 /// <summary>Nombres de las politicas de autorizacion, para no repetir cadenas.</summary>
 internal static class PoliticasAutorizacion

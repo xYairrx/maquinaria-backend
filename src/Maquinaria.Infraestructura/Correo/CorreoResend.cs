@@ -14,14 +14,35 @@ namespace Maquinaria.Infraestructura.Correo;
 /// auditar y actualizar, a cambio de ahorrar veinte lineas. El mismo criterio que
 /// descarto MediatR y un paquete de Argon2.
 /// </summary>
-internal sealed class CorreoResend(
-    HttpClient http,
-    IOptions<OpcionesCorreo> correo,
-    ILogger<CorreoResend> log) : IEnviadorCorreo
+internal sealed class CorreoResend : IEnviadorCorreo
 {
+    private readonly HttpClient _http;
+    private readonly IOptions<OpcionesCorreo> _correo;
+    private readonly ILogger<CorreoResend> _log;
+
+    public CorreoResend(
+        HttpClient http,
+        IOptions<OpcionesCorreo> correo,
+        IOptions<OpcionesResend> resend,
+        ILogger<CorreoResend> log)
+    {
+        // AQUI y no al registrar los servicios: un comando que no manda correos no tiene
+        // por que exigir la llave. Esto se construye la primera vez que alguien intenta
+        // enviar, asi que el fallo sigue siendo temprano y claro.
+        if (string.IsNullOrWhiteSpace(resend.Value.Llave))
+        {
+            throw new InvalidOperationException(
+                "Correo:Proveedor es 'resend' pero falta Resend:Llave. Va en secretos.");
+        }
+
+        _http = http;
+        _correo = correo;
+        _log = log;
+    }
+
     public async Task<ResultadoEnvio> EnviarAsync(MensajeCorreo mensaje, CancellationToken ct)
     {
-        var opciones = correo.Value;
+        var opciones = _correo.Value;
 
         var peticion = new PeticionResend(
             From: $"{opciones.NombreRemitente} <{opciones.Remitente}>",
@@ -32,13 +53,13 @@ internal sealed class CorreoResend(
 
         try
         {
-            var respuesta = await http.PostAsJsonAsync("emails", peticion, ct);
+            var respuesta = await _http.PostAsJsonAsync("emails", peticion, ct);
 
             if (respuesta.IsSuccessStatusCode)
             {
                 var cuerpo = await respuesta.Content.ReadFromJsonAsync<RespuestaResend>(ct);
 
-                log.LogInformation(
+                _log.LogInformation(
                     "Correo enviado por Resend a {Para}. Id {Id}.", mensaje.Para, cuerpo?.Id);
 
                 return ResultadoEnvio.Ok(cuerpo?.Id);
@@ -48,7 +69,7 @@ internal sealed class CorreoResend(
             // puede traer detalles de configuracion de la cuenta.
             var detalle = await respuesta.Content.ReadAsStringAsync(ct);
 
-            log.LogError(
+            _log.LogError(
                 "Resend rechazo el envio a {Para}: {Codigo} {Detalle}",
                 mensaje.Para, (int)respuesta.StatusCode, detalle);
 
@@ -58,7 +79,7 @@ internal sealed class CorreoResend(
         {
             // NO se propaga. El envio es best-effort: que Resend este caido no puede
             // convertir un aprovisionamiento correcto en un fracaso.
-            log.LogError(e, "No se pudo contactar a Resend para enviar a {Para}.", mensaje.Para);
+            _log.LogError(e, "No se pudo contactar a Resend para enviar a {Para}.", mensaje.Para);
 
             return ResultadoEnvio.Fallo("No se pudo contactar al proveedor de correo.");
         }

@@ -31,6 +31,22 @@ public interface IRegistroTenants
     /// </summary>
     Task<IReadOnlyList<ResumenEmpresa>> ListarAsync(CancellationToken ct);
 
+    /// <summary>
+    /// Las empresas que el migrador tiene que recorrer, con su nombre_bd.
+    ///
+    /// Separado de ListarAsync a proposito: ese devuelve un resumen para el panel y NO
+    /// lleva nombre_bd, porque ese dato no tiene por que salir del servidor.
+    /// </summary>
+    Task<IReadOnlyList<TenantParaMigrar>> ListarParaMigrarAsync(
+        string? slug, CancellationToken ct);
+
+    /// <summary>
+    /// Solo la version del esquema. Distinto de MarcarListaAsync, que ademas cambia el
+    /// estado de aprovisionamiento: migrar una empresa que ya operaba no debe tocar su
+    /// estado.
+    /// </summary>
+    Task MarcarVersionEsquemaAsync(Guid tenantId, string version, CancellationToken ct);
+
     /// <summary>Para reintentar un alta que quedo a medias.</summary>
     Task<Tenant?> BuscarPorSlugAsync(string slug, CancellationToken ct);
 

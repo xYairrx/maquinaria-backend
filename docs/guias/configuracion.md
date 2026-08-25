@@ -86,7 +86,89 @@ Los secretos viven en `%APPDATA%\Microsoft\UserSecrets\`, fuera del repo. Para c
 dotnet user-secrets list --project src/Maquinaria.Api | ForEach-Object { ($_ -split '=')[0].Trim() }
 ```
 
-Son por usuario y por máquina, y están en texto plano: protegen contra fugas por git, no contra alguien con tu sesión de Windows.
+Son por usuario y por máquina, y están en texto plano: protegen contra fugas por git, no contra alguien con tu sesión de Windows. Y **no viajan con el repositorio** — ver [los cuatro secretos del arranque](#los-cuatro-secretos-que-exige-el-arranque).
+
+Las dos cadenas no son los únicos secretos. La lista completa está abajo, y son cuatro.
+
+## Los cuatro secretos que exige el arranque
+
+Verificado contra el código el 2026-08-24. Sin ellos el repo compila y no sirve, y cada uno falla en un momento distinto — que es justo lo que vuelve confuso el diagnóstico:
+
+| Clave | Qué es | Dónde revienta si falta |
+|---|---|---|
+| `ConnectionStrings:Central` | La cadena **con** `-pooler` | **Al arrancar.** `SembrarSuperadminAsync` corre antes de `app.Run()` y consulta la base; `RegistroInfraestructura` lanza `Falta ConnectionStrings:Central` |
+| `ConnectionStrings:Migraciones` | La cadena **directa, sin** `-pooler` | En `dotnet ef` y en el alta de una empresa, no al arrancar. `FabricaConexionesEmpresa` la necesita en **tiempo de ejecución** para el `CREATE DATABASE` |
+| `Jwt:Llave` | Mínimo **32 bytes**, para HMAC-SHA256 | En el **primer login**. `ProveedorTokensJwt` valida el largo en su constructor, y es singleton: se construye al resolverlo, no al arrancar |
+| `Arranque:Superadmin:{Correo,Contrasena,Nombre}` | El primer superadministrador | **No revienta: se salta en silencio.** El sembrador registra *«Sin Arranque:Superadmin configurado»* y sigue. El resultado es una API viva contra la que nadie puede iniciar sesión, porque no hay registro público en ninguna parte |
+
+Dos detalles que cuestan un rato:
+
+- **`Contrasena` va sin eñe.** El sembrador lee `seccion["Contrasena"]`; `Contraseña` con eñe no lo encuentra y cae en el caso de "no configurado", que no es un error sino un log informativo que pasa desapercibido.
+- **`Nombre` es opcional**, con `"Superadministrador"` por defecto. Los que de verdad hacen falta son `Correo` y `Contrasena`: si falta cualquiera de los dos, no se siembra nada.
+
+```bash
+dotnet user-secrets set "Jwt:Llave" "<32 bytes o más>" --project src/Maquinaria.Api
+dotnet user-secrets set "Arranque:Superadmin:Correo" "<correo>" --project src/Maquinaria.Api
+dotnet user-secrets set "Arranque:Superadmin:Contrasena" "<contraseña>" --project src/Maquinaria.Api
+```
+
+### Los user secrets no viajan con el repositorio
+
+Viven en `%APPDATA%\Microsoft\UserSecrets\<UserSecretsId>\secrets.json`, y **OneDrive no sincroniza esa carpeta**. El código sí está en OneDrive; los secretos no.
+
+La consecuencia práctica: clonar el repo en otra máquina —o restaurar esta— deja un backend que compila y no arranca, con un error de conexión que no menciona en ninguna parte que el problema sea un archivo ausente. Es reconfiguración manual, no un fallo. El `UserSecretsId` del proyecto es `e2ab6bfa-6850-4b07-ba0b-06a9e777cd27`.
+
+## Resend
+
+`Correo:Proveedor` pasó a `"resend"` en `appsettings.json` el **2026-08-24**. Antes era `"log"`, que escribía el correo al log en lugar de enviarlo.
+
+Eso convierte a `Resend:Llave` en un secreto más:
+
+```bash
+dotnet user-secrets set "Resend:Llave" "<re_...>" --project src/Maquinaria.Api
+```
+
+No revienta al arrancar: `CorreoResend` trata el envío como *best-effort* y registra el fallo sin propagarlo, porque que Resend esté caído no puede tumbar el alta de una empresa. El síntoma de una llave ausente es entonces un correo que nunca llega, con el motivo únicamente en el log.
+
+**Mientras el dominio no esté verificado en Resend, la cuenta está en sandbox**, y eso significa dos restricciones que parecen errores de configuración y no lo son:
+
+1. El único remitente que acepta es **`onboarding@resend.dev`** — que es el valor por defecto de `Correo:Remitente`.
+2. Solo **entrega al correo del titular de la cuenta**. Una invitación a `admin@demo.mx` se acepta con 200 y no llega a ninguna parte.
+
+Para probar el flujo completo de invitación o de restablecimiento con una dirección real hace falta verificar un dominio primero.
+
+## Referencia de configuración
+
+Lo que vive en `appsettings.json` y se commitea a propósito. Los valores de la columna *Desarrollo* salen de `appsettings.Development.json`, que gana sobre el base.
+
+| Clave | Default | Desarrollo | Para qué |
+|---|---|---|---|
+| `Jwt:Emisor` | `maquinaria` | — | Se valida al recibir |
+| `Jwt:AudienciaPlataforma` | `maquinaria-plataforma` | — | Tokens de superadministrador |
+| `Jwt:AudienciaEmpresa` | `maquinaria-empresa` | — | Tokens de usuario de empresa |
+| `Jwt:MinutosPlataforma` | `60` | — | Larga porque la plataforma no tiene refresco |
+| `Correo:Proveedor` | `resend` | — | `log` o `resend` |
+| `Correo:Remitente` | `onboarding@resend.dev` | — | Debe ser de un dominio verificado |
+| `Correo:UrlBaseAplicacion` | `http://localhost:4200` | — | Base de las ligas. El slug se le inserta en el **host** |
+| `Correo:DevolverLigaEnRespuesta` | `false` | `true` | En producción regalaría la sesión del administrador de un cliente |
+| `Correo:DiasVigenciaInvitacion` | `7` | — | La vigencia del **restablecimiento no está aquí**: es una hora y vive en el dominio |
+| `MultiTenancy:SegundosCacheTenant` | `60` | — | Caché del directorio de tenants |
+| `MultiTenancy:PrefijoBaseDatos` | `maquinaria_` | — | `nombre_bd` = prefijo + slug |
+| `Cors:Origenes` | — | `http://localhost:4200` | Orígenes **exactos**. Aquí van los de la plataforma, que no son subdominios de cliente |
+| `Cors:DominioBase` | vacío | `localhost` | Dominio bajo el cual **cualquier** subdominio vale. Vacío desactiva la regla |
+| `Cors:ExigirHttps` | `true` | `false` | Se apaga solo en desarrollo, donde el dev server es http |
+
+### `Cors:DominioBase`, y por qué no es una lista
+
+Cada empresa vive en su propio subdominio, así que el conjunto de orígenes válidos es **abierto**: crece con cada cliente. Una lista en configuración obligaría a redesplegar la API cada vez que se da de alta una empresa. La decisión está en `src/Maquinaria.Api/Arranque/OrigenesPermitidos.cs`, con el porqué de cada comprobación.
+
+`DominioBase = localhost` habilita `bajio.localhost:4200` **sin tocar el archivo `hosts`**: Chrome y Edge resuelven `*.localhost` a `127.0.0.1` de forma nativa.
+
+La comparación es `host == dominio || host.EndsWith("." + dominio)`, y el **punto del prefijo es lo que la hace segura**: `malo-ejemplo.com` termina en `-ejemplo.com`, no en `.ejemplo.com`. Sin ese punto, un `EndsWith("ejemplo.com")` regalaría el CORS a un dominio ajeno.
+
+**Lo que esta comprobación no hace:** verificar que el subdominio sea una empresa real. Sería una consulta a la base en cada preflight y delataría qué slugs son clientes — justo lo que evitan las reglas anti-enumeración del login. Que el tenant exista lo resuelve la petición, no el CORS.
+
+> **Pendiente menor:** el `appsettings.json` base trae `Cors:Origenes: ["*.localhost:4200"]`. La lista exacta se compara con `Contains`, así que un comodín ahí no coincide con nada y además no es un origen válido —le falta el esquema—. En desarrollo no se nota porque `appsettings.Development.json` sustituye la lista entera. Es configuración muerta que conviene limpiar.
 
 ## Precedencia
 
@@ -102,7 +184,7 @@ User secrets solo se cargan cuando el entorno es `Development`, lo cual es justo
 
 ## Qué sí va en appsettings.json
 
-Todo lo que no es secreto, y se commitea a propósito porque es configuración documentada: niveles de logging, issuer/audience y vigencia del JWT, qué implementación de `IAlmacenamientoArchivos` usar, zona horaria por defecto.
+Todo lo que no es secreto, y se commitea a propósito porque es configuración documentada: niveles de logging, issuer/audience y vigencia del JWT, el dominio base del CORS, qué implementación de `IEnviadorCorreo` y de `IAlmacenamientoArchivos` usar, zona horaria por defecto. El inventario clave por clave está en la [referencia de configuración](#referencia-de-configuración).
 
 ## Neon
 
@@ -135,7 +217,7 @@ Decidido el 2026-08-20 (ver [estado y pendientes](estado-y-pendientes.md#4-nombr
 
 Las bases de empresa siguen el patrón `maquinaria_<slug>` y las crea el aprovisionamiento, nunca a mano.
 
-**Solo hay dos secretos, no tres.** La fábrica de tiempo de diseño de `ContextoEmpresa` no lleva cadena propia: toma `ConnectionStrings:Migraciones` y le sustituye el `Database=` por `maquinaria_plantilla` con `NpgsqlConnectionStringBuilder`. Así no hay un tercer valor que se desincronice, y es el mismo camino de código que el runtime usa para resolver la base de cada empresa.
+**Solo hay dos cadenas de conexión, no tres** (los otros dos secretos del arranque son `Jwt:Llave` y el superadministrador — ver [los cuatro secretos](#los-cuatro-secretos-que-exige-el-arranque)). La fábrica de tiempo de diseño de `ContextoEmpresa` no lleva cadena propia: toma `ConnectionStrings:Migraciones` y le sustituye el `Database=` por `maquinaria_plantilla` con `NpgsqlConnectionStringBuilder`. Así no hay un tercer valor que se desincronice, y es el mismo camino de código que el runtime usa para resolver la base de cada empresa.
 
 **`plantilla` y `central` quedan reservados como slugs de tenant**, porque un slug `plantilla` produciría `nombre_bd = maquinaria_plantilla` y chocaría con esta base.
 

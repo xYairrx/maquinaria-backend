@@ -65,6 +65,54 @@ Con `ManagePackageVersionsCentrally` activo, los proyectos declaran el paquete s
 
 Los paquetes nuevos se agregan editando el `.csproj` y registrando la versión en `Directory.Packages.props`.
 
+### Compilar con la API corriendo, sin matarla
+
+El `MSB3027`/`MSB3021` de "no se puede copiar el archivo" con un proceso de `Maquinaria.Api` vivo ya está descrito en la [bitácora](estado-y-pendientes.md#trampa-de-operación-dos-instancias-de-la-api-a-la-vez). Lo que faltaba escrito es la salida, que no obliga a detener el proceso:
+
+```bash
+dotnet build Maquinaria.slnx --nologo -p:BaseOutputPath="<carpeta temporal>\"
+```
+
+La salida se redirige a otra carpeta, así que nadie intenta sobrescribir las DLL que el proceso vivo tiene tomadas. Los `obj` se quedan en su sitio y no hay bloqueo.
+
+**No pases `BaseIntermediateOutputPath`.** Es lo primero que uno intenta —mover también el `obj`— y produce `CS0579`: atributos de ensamblado duplicados. Los `.AssemblyInfo.cs` generados terminan contándose dos veces porque los proyectos comparten la carpeta intermedia. El `obj` se queda donde está; lo que se mueve es solo el `bin`.
+
+La barra invertida final del valor no es cosmética: MSBuild concatena la ruta y sin ella pega el nombre del proyecto directamente al último segmento.
+
+**Para las pruebas, compilar primero y luego correrlas sin build:**
+
+```bash
+dotnet build Maquinaria.slnx --nologo
+dotnet test tests/Maquinaria.Api.Tests --no-build
+```
+
+Un `BaseOutputPath` único mete a **todos** los proyectos en la misma carpeta, los dos de prueba incluidos, y ahí un `testhost` vivo bloquea las DLL del otro. Fuera de ese caso el motivo es más simple: `dotnet test` reconstruye por su cuenta y vuelve a chocar con el proceso de la API. Compilar una sola vez y correr con `--no-build` evita las dos cosas.
+
+---
+
+## Ejecución y navegador
+
+### `UseHttpsRedirection` rompe todas las llamadas del navegador en desarrollo
+
+El síntoma engaña, y por eso costó tiempo real. La pantalla de Angular decía *«no se pudo contactar al servidor»* **mientras la API respondía perfectamente a `curl` y a PowerShell**.
+
+Lo que pasaba:
+
+1. El preflight `OPTIONS` salía por `http://localhost:5123` y devolvía **204** — el CORS estaba bien y no era el problema.
+2. La petición real se redirigía a `https://localhost:7020`.
+3. Ahí el navegador cortaba con **`ERR_CERT_AUTHORITY_INVALID`**, porque el certificado de desarrollo de .NET no está en el almacén de confianza.
+4. Angular solo ve un error de red genérico, sin nada que mencione certificados.
+
+`curl` y PowerShell no validan el certificado del mismo modo, así que confirman que la API está sana y refuerzan la sospecha equivocada de que el problema es CORS o el frontend.
+
+**Solución adoptada:** no redirigir en desarrollo. En `Program.cs`, `app.UseHttpsRedirection()` va dentro de un `if (!app.Environment.IsDevelopment())`. En producción la redirección sigue activa, que es donde importa.
+
+**Alternativa igual de válida, descartada por un motivo concreto:** `dotnet dev-certs https --trust` y apuntar el frontend al 7020. Es más parecido a producción, pero exige un paso manual por máquina que nada verifica — y quien lo olvide pierde la tarde con un error que no habla de certificados.
+
+### Un subdominio nuevo no necesita tocar el archivo `hosts`
+
+Chrome y Edge resuelven `*.localhost` a `127.0.0.1` de forma nativa, así que `bajio.localhost:4200` funciona sin configurar nada. Lo que sí hace falta es `Cors:DominioBase` en `localhost`; ver [configuración](configuracion.md#corsdominiobase-y-por-qué-no-es-una-lista).
+
 ---
 
 ## Base de datos

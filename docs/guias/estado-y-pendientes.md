@@ -1,12 +1,14 @@
 # Estado y pendientes
 
-Última verificación: 2026-08-21.
+Última verificación: 2026-08-24.
 
 ## Estado actual
 
 **El esquema de la Fase 0 está completo y el primer login funciona.** Las 9 tablas de plataforma en `maquinaria_central` y las 10 de empresa en `maquinaria_plantilla` (Neon, rama `dev`), con sus `CHECK`, sus índices y el constraint `EXCLUDE` de no-traslape verificados contra la base real. `dotnet build --no-incremental` en verde con 0 advertencias y sin paquetes vulnerables.
 
 **`/openapi/v1.json` ya no está vacío:** expone `POST /api/plataforma/sesion` y `GET /api/plataforma/sesion/actual`. Un superadministrador inicia sesión, recibe un JWT y accede a un endpoint protegido, comprobado de punta a punta contra Neon.
+
+**El ciclo completo de credenciales de un usuario de empresa está cerrado** (2026-08-24): invitación, definición de contraseña, login con slug y restablecimiento. Y **el navegador ya puede hablar con la API**: el CORS pasó de lista fija a predicado sobre un dominio base, porque cada empresa vive en su propio subdominio. `Maquinaria.Api.Tests` está en **116 pruebas, todas en verde** — verificado corriéndolas el 2026-08-24.
 
 ### Hecho
 
@@ -35,16 +37,18 @@
 - [x] Las 3 tablas restantes de `ContextoEmpresa` —`parametro`, `archivo`, `auditoria`— con el trigger `auditoria_inmutable`, en `EmpresaAuditoriaYConfiguracion`
 - [x] `auditoria` **también en la base central** (`CentralAuditoria`), con su trigger. La misma entidad en los dos contextos
 - [x] Los 12 constraints de `auditoria` verificados contra **las dos** bases reales, y las 6 preguntas que la bitácora debe responder, comprobadas
-- [ ] El interceptor de auditoría: **bloqueado por la auth**, necesita `usuario_id`, `roles`, `ip` y `origen` del contexto de la petición
+- [ ] El interceptor de auditoría: **ya no está bloqueado** (2026-08-24). Necesitaba `usuario_id`, `roles`, `ip` y `origen` del contexto de la petición autenticada, y con la auth de empresa cerrada esos cuatro existen. Queda por escribir
 - [x] **Servicio de aprovisionamiento**, con su endpoint `POST /api/plataforma/empresas`. Probado creando una empresa real de punta a punta
 - [x] Abstracción de correo `IEnviadorCorreo`, con `CorreoEnLog` para desarrollo y `CorreoResend` para la nube
 - [x] `GET /api/plataforma/empresas`: listado con estado de aprovisionamiento, plan y módulos. Usa subconsultas y no joins, para que un tenant **sin** suscripción aparezca con plan nulo en lugar de desaparecer — que son justo los que hay que ver
 - [ ] Comando `migrar-empresas` + endpoint de salud que reporte quién quedó atrasado
 - [ ] Endpoint para **reintentar** un alta en `Fallida`. La secuencia ya es idempotente; falta el disparador
 - [x] **Resolución de conexión por empresa**: `IDirectorioTenants` con caché, `IContextoTenant` de ámbito de petición, `MiddlewareTenant`, `FabricaConexionesEmpresa` y `ProveedorContextoEmpresa`. Ver [`01-arquitectura.md`](../01-arquitectura.md) §2.0
-- [ ] Auth de **empresa**: login por empresa/correo/contraseña, refresh rotativo, invitaciones
+- [x] Auth de **empresa**: invitaciones, login por `empresa / correo / contraseña` y **restablecimiento de contraseña** (2026-08-24). Falta solo el **endpoint de renovación**: el login ya emite y guarda la `sesion_refresh`, pero no hay nada que la rote
+- [x] **CORS por subdominio** y acceso desde el navegador (2026-08-24). Ver la sección de abajo
 - [x] Manejo global de errores (`IExceptionHandler` → ProblemDetails, sin filtrar mensajes de excepción al cliente) y health check `/salud` de la base central
 - [x] Auth de **plataforma**: PBKDF2, JWT con audiencia propia, policy de ámbito, limitador de intentos por IP, y siembra del primer superadministrador desde secretos
+- [ ] **Endpoint de refresco rotativo** de la sesión de empresa. La tabla `sesion_refresh` existe, el login la escribe y el restablecimiento la revoca; falta el `POST` que canjea un token de refresco por uno nuevo
 - [ ] Logging estructurado con enriquecimiento por petición (falta el `correlacion_id` que compartirá con la auditoría)
 - [ ] Abstracción de almacenamiento de archivos con implementación en disco
 - [ ] Convenciones de equipo: ramas, commits, revisión, acceso a Neon (los remotos de GitHub ya están: `xYairrx/maquinaria-backend` y `xYairrx/maquinaria-frontend`, rama `develop`)
@@ -55,13 +59,14 @@ Un superadministrador da de alta una empresa desde el panel, el sistema le crea 
 
 ### Orden de trabajo
 
-Cerrados los pasos **7**, **8** y la mitad de plataforma del **12**. El orden que sigue, ya reordenado:
+Cerrados los pasos **7**, **8**, **11** y el **12** completo. El orden que sigue, revisado el 2026-08-24:
 
 1. ~~Resolución de conexión por empresa.~~ **Hecha.**
 2. ~~Aprovisionamiento.~~ **Hecho**, salvo el endpoint de reintento.
-3. **Comando `migrar-empresas`** (el 10) y el endpoint de salud que reporta quién quedó atrasado.
-4. **Auth de empresa** (el 12): invitación, definición de contraseña y login con slug.
-5. **Interceptor de auditoría**, desbloqueado en cuanto haya contexto de petición autenticada.
+3. ~~Auth de empresa (el 12): invitación, definición de contraseña y login con slug.~~ **Hecha**, y con restablecimiento encima. Falta la renovación del token de refresco.
+4. **Comando `migrar-empresas`** (el 10) y el endpoint de salud que reporta quién quedó atrasado. **Sube a primer lugar**: `demo` y `bajio` ya están una migración atrás de `maquinaria_plantilla`, así que el desfase dejó de ser hipotético.
+5. **Interceptor de auditoría**, desbloqueado: ya hay contexto de petición autenticada de los dos lados —plataforma y empresa—, así que `usuario_id`, `roles`, `ip` y `origen` existen. Era el único bloqueante y ya no está.
+6. **Endpoint de refresco rotativo** y **endpoint de reintento** del alta en `Fallida`. Los dos son piezas pequeñas sobre mecánica que ya existe.
 
 El DDL de referencia está en [`05-esquema-fase0.md`](../05-esquema-fase0.md).
 
@@ -336,6 +341,11 @@ idempotente y el registro queda en `Fallida`, pero nada lo vuelve a llamar todav
 `CorreoResend` **no se ha ejercitado contra la API real**: hace falta la llave y un dominio
 verificado.
 
+> **Al 2026-08-24:** `Correo:Proveedor` ya vale `"resend"`, así que el camino real es el que
+> corre. Lo que sigue faltando es el secreto `Resend:Llave` y el dominio verificado — sin
+> ellos el envío falla en silencio, porque es *best-effort* por diseño y solo deja rastro en
+> el log. Ver [configuración](configuracion.md#resend).
+
 ### Resolución de conexión por empresa — 2026-08-21
 
 La primera pieza del bloque que falta para cerrar la Fase 0. El diseño está en
@@ -528,6 +538,87 @@ nadie referencia—, porque eso es lo que permite construir por rebanadas sin re
 
 La prueba de `auditoria` corre entera dentro de una transacción que termina en `ROLLBACK`, y no por comodidad: la tabla no se puede limpiar. **La única forma de que una fila de auditoría no exista es no confirmarla nunca**, así que el `ROLLBACK` es en sí mismo parte de la demostración. Está en el guion de pruebas junto a los 12 casos negativos.
 
+### CORS por subdominio y acceso desde el navegador — 2026-08-24
+
+Hasta aquí la API se había probado con `curl` y PowerShell. La primera llamada real desde
+Angular destapó dos cosas distintas que se manifestaban igual, y una de ellas obligó a
+cambiar el modelo de orígenes.
+
+**La lista fija de orígenes dejó de servir, porque cada empresa vive en su propio
+subdominio.** El conjunto es abierto: crece con cada cliente. Mantenerlo en configuración
+significaría redesplegar la API cada vez que se da de alta una empresa — un despliegue por
+venta. Ahora hay un predicado en
+[`OrigenesPermitidos`](../../src/Maquinaria.Api/Arranque/OrigenesPermitidos.cs), con dos
+claves nuevas: `Cors:DominioBase` y `Cors:ExigirHttps`.
+
+Se mantiene también una lista de orígenes **exactos**. Ahí van los de la plataforma —el
+panel de superadmin y la pantalla de selección de empresa—, que no son subdominios de
+cliente. La lista exacta gana y no pasa por ninguna validación de forma: es configuración
+nuestra, no entrada del exterior.
+
+**Por qué un predicado y no `AllowAnyOrigin`.** `AllowAnyOrigin` deshabilita las
+credenciales y deja que cualquier sitio llame a la API desde el navegador de un usuario con
+sesión abierta. `SetIsOriginAllowed` sí es compatible con `AllowCredentials`, que hará falta
+cuando el token de refresco pase a cookie `HttpOnly`.
+
+**El punto del prefijo es lo que hace segura la comparación.** Se acepta el dominio pelado
+—ahí vive la pantalla que pregunta a qué empresa entras— y cualquier cosa bajo él, pero
+comparando contra `"." + dominio`: `malo-ejemplo.com` termina en `-ejemplo.com`, no en
+`.ejemplo.com`, así que no pasa. Un `EndsWith("ejemplo.com")` sin el punto regalaría el CORS
+a un dominio ajeno, y es exactamente el error que uno escribe sin pensarlo.
+
+**Lo que esta comprobación NO hace, a propósito: verificar que el subdominio sea una empresa
+real.** Serían dos costos, y el segundo es el que decide:
+
+1. Una consulta a la base **en cada preflight**, es decir antes de cada petición no trivial
+   del navegador.
+2. Un enumerador de clientes. Aceptar `bajio.ejemplo.com` y rechazar `otro.ejemplo.com`
+   dice cuáles slugs son clientes — justo lo que evitan las reglas anti-enumeración del
+   login y del restablecimiento. Sería tirar por la ventana la defensa que costó el piso de
+   tiempo constante.
+
+Que el tenant exista lo resuelve la petición, no el CORS. Hay una prueba dedicada a fijar
+esa decisión: `Un_subdominio_inexistente_se_acepta_a_proposito`.
+
+**En desarrollo `DominioBase` vale `localhost`**, que habilita `bajio.localhost:4200` **sin
+tocar el archivo `hosts`**: Chrome y Edge resuelven `*.localhost` a `127.0.0.1` de forma
+nativa. Y `ExigirHttps` se apaga solo ahí, porque el dev server de Angular es http.
+
+**`UseHttpsRedirection` rompía todas las llamadas del navegador**, y el síntoma engañaba
+tanto que se registró aparte, en [trampas conocidas](trampas-conocidas.md#usehttpsredirection-rompe-todas-las-llamadas-del-navegador-en-desarrollo).
+En corto: el preflight pasaba con 204 y la petición real moría en
+`ERR_CERT_AUTHORITY_INVALID` al redirigirse al puerto https, mientras `curl` y PowerShell
+—que no validan el certificado igual— confirmaban que la API estaba sana. Se decidió no
+redirigir en desarrollo; en producción la redirección sigue activa.
+
+**Se reservó el slug `login`.** Con el subdominio como identificador de tenant, ahí vive la
+pantalla que pregunta a qué empresa se entra. Dejarlo libre permitiría que una empresa se
+quedara con la puerta de entrada de todas las demás. Va en `SlugsReservados`, junto a
+`central` y `plantilla`.
+
+**`InternalsVisibleTo` en `Maquinaria.Api.csproj`.** La decisión de qué origen se acepta es
+lógica de seguridad y tiene que poder probarse, pero `OpcionesCors` y `OrigenesPermitidos`
+son detalle del arranque de la Api. Se abre el assembly a `Maquinaria.Api.Tests` en lugar de
+volver públicos tipos que nadie fuera de la Api tiene por qué ver — es el compromiso más
+barato de los dos.
+
+**Verificado:** 9 métodos de prueba en `OrigenesPermitidosPruebas`, **22 casos** contando
+los `InlineData`, corridos el 2026-08-24. Cubren los subdominios válidos, los dominios
+ajenos que se le parecen, http contra https según `ExigirHttps`, esquemas que no son web,
+orígenes no absolutos, la lista exacta sola y conviviendo con el dominio base, y el
+subdominio inexistente que se acepta a propósito.
+
+**Resend quedó activado**: `Correo:Proveedor` pasó de `"log"` a `"resend"` en
+`appsettings.json`. Sigue faltando `Resend:Llave` y un dominio verificado; mientras tanto la
+cuenta está en sandbox y solo entrega al correo del titular. Ver
+[configuración](configuracion.md#resend).
+
+**Un cabo suelto menor:** el `appsettings.json` base trae `Cors:Origenes:
+["*.localhost:4200"]`, y la lista exacta se compara con `Contains`. Un comodín ahí no
+coincide con nada y además no es un origen válido —le falta el esquema—. En desarrollo no se
+nota porque `appsettings.Development.json` sustituye la lista entera. Es configuración
+muerta que conviene limpiar.
+
 ### Restablecimiento de contraseña de usuarios de empresa — 2026-08-24
 
 `POST /api/empresas/{slug}/restablecimientos` para pedir la liga, `GET .../{token}` para
@@ -581,6 +672,39 @@ cual un correo interceptado abre una cuenta ajena, y dejarla en un `appsettings`
 que alguien la suba a treinta días sin darse cuenta. Vive en
 `PoliticaRestablecimiento`, en el dominio.
 
+**El texto de la vigencia vive junto al número.** `PoliticaRestablecimiento.VigenciaTexto`
+es lo que la plantilla del correo interpola, así que cambiar una hora obliga a ver la otra.
+Una plantilla que promete un plazo distinto del que aplica no rompe nada: genera tickets de
+soporte, que es peor, porque nadie los relaciona con un cambio de código.
+
+**La liga cambió de forma: el slug va en el HOST, no en la cadena de consulta.**
+`PlantillasCorreoWeb` construye `bajio.<dominio>/invitacion?token=…` en lugar del
+`?empresa=bajio` anterior, y aplica igual a la de restablecimiento (`/restablecer`). Es
+consecuencia directa del CORS por subdominio: cada empresa vive en el suyo y es de ahí de
+donde el frontend saca a qué empresa se entra, así que una liga al dominio pelado llegaría a
+un sitio donde esas pantallas no existen.
+
+Se arma con `UriBuilder` y no concatenando: el esquema y el puerto salen de
+`Correo:UrlBaseAplicacion` sin tener que interpretarlos, y en desarrollo
+`http://localhost:4200` da `http://bajio.localhost:4200` sin ningún caso especial.
+
+**Verificado el 2026-08-24: 29 pruebas nuevas** —9 en `VigenciaDeTokenPruebas` y 20 en
+`RestablecimientoPruebas`—, y `Maquinaria.Api.Tests` queda en **116 en total, todas en
+verde**. El reparto por archivo:
+
+| Archivo | Casos |
+|---|---|
+| `RestablecimientoPruebas.cs` | 29 |
+| `FabricaConexionesEmpresaPruebas.cs` | 22 |
+| `OrigenesPermitidosPruebas.cs` | 22 |
+| `FormatoSlugPruebas.cs` | 21 |
+| `ContextoTenantPruebas.cs` | 11 |
+| `HashContrasenasPruebas.cs` | 10 |
+| `UnitTest1.cs` | 1 |
+
+`Maquinaria.Dominio.Tests` sigue con la prueba de plantilla que genera `dotnet new`: 1 caso
+y nada propio todavía.
+
 ---
 
 ## Restricciones del aprovisionamiento
@@ -608,13 +732,22 @@ Cuatro restricciones técnicas que el código debe respetar desde el día uno:
 
 ## Divergencias con los documentos de diseño
 
-Los documentos de [`docs/`](../) son especificación, no inventario. Diferencias detectadas al 2026-08-20:
+Los documentos de [`docs/`](../) son especificación, no inventario. Diferencias reverificadas contra el disco el **2026-08-24**:
 
 | Documento dice | Realidad |
 |---|---|
 | Repos `maquinaria_back` y `maquinaria_front` | `maquinaria-backend` y `maquinaria-frontend` |
 | Contenedor en `Documents/Maquinaria/` | `OneDrive/Desktop/maquinaria/` |
-| Frontend en Angular 22 / CLI 22.1.4 | Angular 21.2.21 |
+| Frontend en Angular 22 / CLI 22.1.4 | `@angular/core` `^21.2.0`, `@angular/cli` `^21.2.21` |
 | Checklist marca el andamiaje del backend como hecho | Se creó el 2026-08-20 |
 
-Verifica siempre contra el repo antes de asumir que algo está hecho.
+Verifica siempre contra el repo antes de asumir que algo está hecho. **Cuando el documento y el código no coinciden, gana el código.**
+
+### Cifras que la propia bitácora tenía mal
+
+Al reverificar el 2026-08-24 se corrigieron dos números que se habían escrito de memoria:
+
+- Las pruebas de CORS son **22 casos** (9 métodos con sus `InlineData`), no 12.
+- El total de `Maquinaria.Api.Tests` es **116**, y eso sí cuadra: se confirmó corriendo la
+  suite, no contando atributos a ojo. Un `[Theory]` con seis `InlineData` son seis pruebas
+  para el corredor y una sola para quien lee el archivo, y ahí es donde se cuela el error.

@@ -103,6 +103,33 @@ internal sealed class RegistroTenantsEf(ContextoCentral central) : IRegistroTena
                 t.CreadoEn))
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<TenantParaMigrar>> ListarParaMigrarAsync(
+        string? slug, CancellationToken ct)
+    {
+        var consulta = central.Tenants.AsNoTracking().Where(t => t.EliminadoEn == null);
+
+        if (!string.IsNullOrWhiteSpace(slug))
+        {
+            var normalizado = slug.Trim().ToLowerInvariant();
+            consulta = consulta.Where(t => t.Slug == normalizado);
+        }
+
+        return await consulta
+            .OrderBy(t => t.Slug)
+            .Select(t => new TenantParaMigrar(
+                t.Id, t.Slug, t.NombreBd, t.EstadoAprovisionamiento))
+            .ToListAsync(ct);
+    }
+
+    public async Task MarcarVersionEsquemaAsync(
+        Guid tenantId, string version, CancellationToken ct)
+        => await central.Tenants
+            .Where(t => t.Id == tenantId)
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(t => t.VersionEsquema, version)
+                      .SetProperty(t => t.ActualizadoEn, DateTime.UtcNow),
+                ct);
+
     public Task<Tenant?> BuscarPorSlugAsync(string slug, CancellationToken ct)
         => central.Tenants.FirstOrDefaultAsync(t => t.Slug == slug, ct);
 

@@ -1,4 +1,4 @@
-# Estado y pendientes
+﻿# Estado y pendientes
 
 Última verificación: 2026-08-25.
 
@@ -78,6 +78,11 @@ ya conocida. `dotnet test` deja `Maquinaria.Api.Tests` en **205 pruebas, 0 fallo
 - [x] Endpoint para **reintentar** un alta en `Fallida` (2026-08-25):
   `POST /api/plataforma/empresas/{slug}/reintento`. Corre el **mismo** código que el alta
   —los pasos 2 a 6 extraídos a `EjecutarSecuenciaAsync`—, no una copia
+- [ ] Comando `migrar-empresas` + endpoint de salud que reporte quién quedó atrasado
+- [x] Comando **`migrar-empresas`** con reporte por empresa, y **`GET /api/plataforma/esquema`** que dice quién quedó atrasado. Ver [`06-alcance-fase1.md`](../06-alcance-fase1.md) §8
+- [x] Diagnosticado el estado real de las cuatro bases (ver la nota de abajo)
+- [x] **Las 28 tablas de Fase 1 estan en las tres bases** (38 con las 10 de Fase 0), 7 migraciones, huella comun `b4f101c3…`, y **30 de 30 pruebas de garantias en verde** contra la base real
+- [ ] Endpoint para **reintentar** un alta en `Fallida`. La secuencia ya es idempotente; falta el disparador
 - [x] **Resolución de conexión por empresa**: `IDirectorioTenants` con caché, `IContextoTenant` de ámbito de petición, `MiddlewareTenant`, `FabricaConexionesEmpresa` y `ProveedorContextoEmpresa`. Ver [`01-arquitectura.md`](../01-arquitectura.md) §2.0
 - [x] Auth de **empresa**, completa (2026-08-25): invitaciones, login por `empresa / correo / contraseña`, **restablecimiento de contraseña** (2026-08-24) y **refresco rotativo** de la `sesion_refresh`
 - [x] **CORS por subdominio** y acceso desde el navegador (2026-08-24). Ver la sección de abajo
@@ -455,6 +460,326 @@ repite el valor recibido. Y las tres consultas de resolución contra la base rea
 tenant de prueba dentro de una transacción que termina en `ROLLBACK`: 26 módulos
 contratados, el cupo propio de 300 equipos ganando sobre el valor por defecto, y la
 compuerta respondiendo `true` para `rentas` y `false` para un módulo inexistente.
+
+### Las 28 tablas de Fase 1, y dos cosas que solo salieron al probarlas — 2026-08-25 (noche)
+
+Faltaba la mitad del entregable y no me di cuenta hasta que lo preguntaste: el esquema de
+28 tablas vivia en [`06-esquema-fase1.sql`](../06-esquema-fase1.sql), que es un DOCUMENTO
+DE DISENO, y **EF Core no lo lee**. Genera la migracion a partir de las entidades de C#, y
+solo habia 10. Una tabla sin entidad no existe para EF y nunca llega a la base.
+
+Cuando dijiste "actualiza las migraciones" te referias a las 28. Yo entregue 10.
+
+Ahora estan las 18 que faltaban: `cliente`, `equipo`, `equipo_archivo`, `equipo_tarifa`,
+`transferencia_equipo`, `ocupacion_equipo`, `cotizacion`, `cotizacion_linea`, `renta`,
+`renta_linea`, `renta_concepto`, `extension_renta`, `contrato`, `contrato_clausula`,
+`orden_compra`, `orden_compra_detalle`, `orden_venta`, `orden_venta_detalle`.
+
+| | |
+|---|---|
+| tablas por base | **38** (28 de Fase 1 + 10 de Fase 0) |
+| migraciones | 7 |
+| CHECK / FK / PK | 62 / 59 / 39 |
+| EXCLUDE | 2 |
+| disparadores | 7 |
+| huella de esquema (las tres bases) | `b4f101c3…` |
+
+#### Las garantias se probaron, no se dieron por buenas
+
+Que una restriccion exista no prueba que haga lo que promete. Se levantaron datos de prueba
+en una transaccion y se intentaron 30 operaciones —cada una esperando ser aceptada o
+rechazada— y al final ROLLBACK. **30 de 30.** Lo que quedo demostrado:
+
+- **No se renta la misma maquina en fechas que se traslapan.** Traslape parcial, traslape
+  de un solo dia, y una ocupacion abierta que empieza dentro de otra: los tres rechazados.
+  Sin traslape, aceptado. Otro equipo en las mismas fechas, aceptado.
+- **El mantenimiento compite por el calendario igual que una renta.** Por eso el traslape
+  se controla en `ocupacion_equipo` y no en `renta_linea`: si se controlara en las lineas
+  de renta, mandar una maquina al taller no impediria rentarla.
+- **Cancelar libera el periodo** sin borrar la fila.
+- **Bodega guarda, sucursal cotiza, patio las dos cosas.** Equipo en una sucursal:
+  rechazado. Traspaso con destino sucursal: rechazado. Cotizar desde una bodega: rechazado.
+- **Un contrato autorizado no se toca.** Editarlo, borrarlo, cambiar el texto de una
+  clausula, agregar una clausula nueva o borrar una: los cinco rechazados. En borrador,
+  todos aceptados.
+- **Un solo precio vigente** por concepto, maquina y cliente.
+- **Un flete se puede cotizar** sin equipo ni tipo de equipo — el caso que mi primera
+  version del CHECK hacia imposible.
+
+#### Dos fallos, y solo uno era del esquema
+
+**El primero fue mi prueba.** Esperaba que una ocupacion abierta desde el 25 de septiembre
+choncara con otra del 10 al 20, y no choca: `[25-sep, infinito)` no se cruza con
+`[10-sep, 20-sep)`. La base tenia razon y la expectativa estaba mal. Se corrigio la prueba
+para que empiece DENTRO del periodo existente, y ademas se agrego el caso que faltaba: una
+ocupacion abierta bloquea todo lo posterior.
+
+**El segundo si era real.** El diseno documentado declara `orden int NOT NULL DEFAULT 0` y
+`cantidad int NOT NULL DEFAULT 1`, y la migracion salio SIN los DEFAULT: EF solo los emite
+si la configuracion los pide. A traves de EF no se nota —la aplicacion siempre manda el
+valor— pero cualquiera que inserte con SQL directo se topa con un NOT NULL sin defecto, y
+sobre todo **el documento estaba mintiendo sobre la base**. Ya paso una vez con el
+comentario del indice de `proveedor` que prometia trigramas sobre un btree. Se arreglo con
+`EmpresaValoresPorDefectoRenglones`, cinco columnas en cuatro tablas.
+
+Sin probar contra la base real, el primer fallo no habria existido y el segundo habria
+quedado escondido hasta que alguien lo sufriera.
+
+#### El documento de diseno se compara contra la base, no se supone
+
+`06-esquema-fase1.sql` NO SE EJECUTA NUNCA —EF Core genera las migraciones desde las
+entidades de C#—, asi que nada garantiza que siga describiendo lo que hay. Es exactamente
+como se perdio la mitad del entregable.
+
+Ahora hay un guion que parsea ese DDL y lo compara columna por columna contra
+`information_schema`: **28 tablas, 307 columnas, cero desajustes**. Conviene volver a
+correrlo cada vez que se toque el esquema.
+
+De paso, dos numeros rancios que salieron de la auditoria: el `README.md` prometia
+**31 tablas** en dos sitios —de antes de fusionar `cliente` con su contacto y su domicilio
+y de quitar `obra`— y esta misma nota decia **11 tablas de Fase 0** cuando son 10; la
+undecima es `__EFMigrationsHistory`.
+
+#### Lo que sigue
+
+El esquema esta completo y verificado, pero **no hay ni un endpoint** que use estas 18
+tablas: no hay casos de uso, ni validaciones de aplicacion, ni pantallas. Eso es la
+implementacion de Fase 1.
+
+### Las cuatro bases al dia, y verificado contra la base real — 2026-08-25 (noche)
+
+| base | migraciones | tablas |
+|---|---|---|
+| `maquinaria_central` | 4/4 | al dia desde antes |
+| `maquinaria_plantilla` | 5/5 | recreada de cero |
+| `maquinaria_demo` | 5/5 | via `migrar-empresas` |
+| `maquinaria_bajio` | 5/5 | via `migrar-empresas` |
+
+Lo que se comprobo, consultando las bases y no el codigo:
+
+- **Las tres bases de empresa son identicas.** No "tienen las mismas tablas": dan la misma
+  huella md5 sobre tabla+columna+tipo+nulabilidad+expresion generada — `d62325ad…`. Contar
+  tablas no habria detectado una columna de tipo distinto en una sola base, que es
+  precisamente el desfase que este comando existe para evitar.
+- **`sucursal` ya no existe en ninguna.** Los tres tipos viven en `ubicacion`.
+- **Las columnas generadas estan y con la expresion correcta:**
+  `almacena_equipo = (tipo = ANY (ARRAY[1, 3]))`, `es_administrativa = (tipo = ANY (ARRAY[2, 3]))`.
+- **Los indices parciales cuelgan de esas columnas** (`ix_ubicacion_almacena`,
+  `ix_ubicacion_administrativa`), y el de `proveedor` es GIN de verdad — el que antes tenia
+  un comentario que prometia trigramas sobre un btree.
+- **18 restricciones CHECK, 15 FK, 21 PK** en cada base, iguales.
+- **La central registro la version** de las dos empresas: `20260825162805_EmpresaCatalogosFase1`.
+
+Sin `x` en `pg_constraint`: los dos `EXCLUDE` viven en `ocupacion_equipo` y `equipo_tarifa`,
+tablas que todavia no existen. **De las 28 tablas del esquema de Fase 1 hay 10 aplicadas**
+—las de catalogo y organizacion—; las 18 de operacion (cliente, equipo, renta, contrato,
+ordenes) no tienen entidad en C# todavia. Eso es la implementacion de Fase 1.
+
+### No era la credencial: era el `Database=` — 2026-08-25 (noche)
+
+Durante horas dimos por bueno que el bloqueo era una credencial caducada de Neon. **No lo
+era.** La credencial funcionaba; lo que estaba mal era a que base apuntaba:
+
+| secreto | apuntaba a | debia apuntar a |
+|---|---|---|
+| `ConnectionStrings:Central` | `maquinaria_plantilla` | `maquinaria_central` |
+| `ConnectionStrings:Migraciones` | `maquinaria_plantilla` | `maquinaria_central` |
+
+El sintoma era `relation "tenant" does not exist`, y antes de eso un `28P01` que si fue una
+credencial vencida — dos fallos distintos encadenados, y el segundo se leyo como si fuera
+el primero.
+
+**Lo que casi sale caro:** con `Migraciones` apuntando a la plantilla, un
+`dotnet ef database update --context ContextoCentral` habria creado las tablas de la base
+CENTRAL dentro de `maquinaria_plantilla`. Se evito por revisar antes de escribir.
+
+La leccion no es "revisa la cadena": es que **un mensaje de error de conexion no dice a que
+base te conectaste**. Conviene mirarlo antes de aplicar DDL, no despues.
+
+#### Estado real de las cuatro bases
+
+Nada se habia perdido:
+
+| base | migraciones | situacion |
+|---|---|---|
+| `maquinaria_central` | 4/4 | al dia |
+| `maquinaria_plantilla` | 4 + `EmpresaCatalogosOrganizacion` | fila de una migracion que **ya no existe en disco** |
+| `maquinaria_demo` | 4 | le falta `EmpresaCatalogosFase1` |
+| `maquinaria_bajio` | 4 | le falta `EmpresaCatalogosFase1` |
+
+`maquinaria_plantilla` conserva `sucursal` —tabla que el diseno actual ya no tiene, porque
+los tres tipos viven en `ubicacion`— y las tablas de una version descartada del catalogo.
+Aplicar `EmpresaCatalogosFase1` encima falla: `categoria_equipo`, `marca` y compania ya
+existen. **Se recrea, no se migra.** Es una base desechable: el aprovisionamiento NO la usa
+como plantilla de `CREATE DATABASE` —crea la base vacia y corre migraciones—, asi que
+soltarla no afecta a ningun cliente.
+
+### `migrar-empresas` y dos defectos propios — 2026-08-25 (noche)
+
+Dos cosas que solo se vieron al correrlo de verdad:
+
+**`RevisarAsync` nombraba `maquinaria_plantilla`** para construir un contexto y preguntarle
+al ensamblado que migraciones existen. `GetMigrations()` lee el ENSAMBLADO, no la base, asi
+que la conexion nunca se abria — pero ataba la revision de esquema a que una base
+desechable siguiera existiendo. Ahora hay `ParaLeerMigraciones()`, que no nombra ninguna.
+
+**El comando volcaba la pila** justo debajo del mensaje limpio, deshaciendo el trabajo de
+tenerlo limpio. En un comando de consola la consola ES el log: la pila se pide con
+`--detalle`.
+
+El comando existe y llega hasta la base; lo único que lo detiene es la credencial. Diseño
+en [`06-alcance-fase1.md`](../06-alcance-fase1.md) §8.
+
+**Un defecto que salió al primer intento de correrlo.** El comando no arrancaba:
+
+```
+Correo:Proveedor es 'resend' pero falta Resend:Llave. Va en secretos.
+```
+
+Era mi propia comprobación de arranque haciendo su trabajo en el lugar equivocado.
+Validaba **al registrar los servicios**, así que `migrar-empresas` —un comando que no manda
+ni un correo— no podía arrancar sin configurar el proveedor de correo.
+
+**Registrar servicios no debe validar lo que ese arranque en concreto no va a usar.** La
+validación se movió al constructor de `CorreoResend`, que se construye la primera vez que
+alguien intenta enviar: el fallo sigue siendo temprano y claro, y cada camino solo exige lo
+que necesita. Al registrar queda un aviso en `stderr` para no perder la señal.
+
+Es la segunda vez que un "fallo rápido" bien intencionado bloquea un camino que no le
+correspondía. La regla que queda: **el arranque valida lo que ese arranque usa.**
+
+**Y el comando fallaba con un volcado de pila** cuando no podía leer la lista de empresas
+—el `try` estaba dentro del bucle por empresa, y eso pasa antes—. Ahora da un mensaje de
+una línea, la pista de dónde mirar, y código de salida `2`.
+
+### Fase 1 desbloqueada, y tres garantías más en el motor — 2026-08-25
+
+**El primer entregable no calcula precios: los captura.** Decisión del negocio, y es lo que
+desbloquea la fase. Las ocho preguntas de tarificación de
+[`04-pendientes.md`](../04-pendientes.md) §1.2 quedan **abiertas pero ya no bloqueantes**,
+porque eran todas sobre reglas de cálculo. El sistema multiplica cantidad por precio y suma
+líneas; no escoge tarifas, no prorratea extensiones, no calcula horas excedentes.
+
+Lo que sí hay que hacer bien desde ahora: **congelar el precio aplicado en cada línea**. Si
+mañana se automatiza el cálculo, los documentos viejos tienen que seguir mostrando lo que se
+cobró.
+
+**`ubicacion` gana dos columnas generadas**, y eso convierte una convención del código en
+una garantía del motor:
+
+```sql
+almacena_equipo    GENERATED ALWAYS AS (tipo IN (1, 3)) STORED
+es_administrativa  GENERATED ALWAYS AS (tipo IN (2, 3)) STORED
+```
+
+El detonante fue *"se deben permitir traspasos de equipos entre bodegas y patios"*. Con
+banderas capturadas, mantenerlas en sincronía con el tipo sería trabajo de la aplicación y
+tarde o temprano una se queda atrás. Generadas, una "bodega que cotiza" **no se puede
+escribir**. Y existen en la base —no solo como propiedad derivada en C#— para que las tres
+reglas que cruzan tablas se apoyen en ellas: equipo solo donde se almacene, traspaso solo
+entre ubicaciones que almacenen, cotización solo desde una administrativa. Las hará cumplir
+un trigger cuando existan esas tablas.
+
+**El contrato es inmutable tras autorizarse.** Estados `Borrador → Autorizado → Terminado`
+más `Cancelado`, y un trigger que rechaza `UPDATE`/`DELETE` cuando el estado ya no es
+borrador — mismo patrón que `rol_sistema_inmutable`. Es un documento con firmas: si se
+pudiera cambiar el texto después, la firma no significaría nada. Cambiarlo exige cancelarlo
+y hacer otro.
+
+**Las cláusulas vienen de dos orígenes**, y por eso `contrato_clausula.clausula_id` es
+nullable: del catálogo general, o redactadas para ese cliente. En el segundo caso el texto
+del contrato es el único origen. Y en los dos casos el texto se **copia**, no se
+referencia — corregir la plantilla no cambia contratos ya firmados.
+
+**`motivo = Venta` en `ocupacion_equipo`.** Al finalizar una orden de venta el equipo cierra
+su calendario, y deja de poder rentarse **sin que el módulo de rentas sepa nada de ventas**.
+Es el punto de unión entre las dos cosas.
+
+### La migración de Fase 1 se reescribió tres veces, a propósito
+
+`EmpresaCatalogosFase1` es una sola migración con **10 tablas**, y llegó ahí después de
+quitarse y regenerarse tres veces: por la corrección de ubicación, por `tarifa` y por
+`clausula`. Se pudo hacer porque **nunca se aplicó a `demo` ni a `bajio`** — solo a
+`maquinaria_plantilla`, que es desechable por diseño.
+
+Reescribir en lugar de encimar correcciones deja una historia legible. La regla *append-only*
+aplica a lo que ya llegó a la base de un cliente, no a lo que todavía no sale del
+repositorio.
+
+**Consecuencia operativa:** hay que **borrar y recrear `maquinaria_plantilla`**, no
+migrarla. Conserva la tabla `sucursal`, la `ubicacion` vieja y filas de
+`__EFMigrationsHistory` de versiones que ya no existen.
+
+### El alcance de la Fase 1 se consolidó en un documento
+
+Estaba repartido en tres archivos con enmiendas fechadas encima de enmiendas, y ya no se
+podía leer de corrido. Ahora vive en
+[`06-alcance-fase1.md`](../06-alcance-fase1.md), que **manda** sobre el alcance del primer
+entregable e incluye las decisiones **con su historial** — cuáles se cerraron, se
+revirtieron y se volvieron a tomar. Sin ese historial, alguien va a "corregir" el modelo de
+vuelta a una versión descartada.
+
+### Cambios de alcance y una corrección de modelo — 2026-08-24 (tarde)
+
+El negocio revisó el alcance del primer entregable. **Dos decisiones que se habían cerrado
+el mismo día se revirtieron**, y conviene que quede el rastro:
+
+| se había cerrado como | quedó en |
+|---|---|
+| la renta **no** incluye operador (§2.4) | **sí** puede incluirlo — solo quién va y cuánto se cobra |
+| venta y compra **fuera** del primer entregable | **dentro**, con proceso corto |
+
+**Corrección de modelo: `sucursal` desaparece como entidad.** Yo había construido una
+jerarquía `sucursal → ubicacion`, y el negocio las define como **tres tipos de sitio al
+mismo nivel**:
+
+```
+bodega     guarda maquinas
+sucursal   administra y cotiza
+patio      las dos cosas
+```
+
+Una sola tabla `ubicacion` con `tipo`, y las dos capacidades —`AlmacenaEquipo`,
+`EsAdministrativa`— **derivadas** del tipo en lugar de guardadas como banderas. Con
+banderas se podría crear una "bodega que cotiza", que no existe; derivándolas es imposible
+de escribir.
+
+Consecuencia que hay que hacer cumplir en el dominio, porque cruza dos tablas y ningún
+`CHECK` la alcanza: **un equipo solo puede estar en una ubicación que almacene**, y **una
+cotización solo puede salir de una administrativa**.
+
+**Las tarifas son un catálogo de conceptos cobrables**, no el precio por periodo de un
+equipo. Renta diaria, mantenimiento, flete, operador, maniobras: cada una es una fila con
+su `unidad` —hora, día, semana, mes, evento, kilómetro— y con dónde aplica, renta o venta.
+Una renta o una venta arrastra **varias**.
+
+Eso unifica tres cosas que si no tendrían tabla cada una: el flete se cotiza sobre la renta
+como línea con tarifa de flete; el operador, como línea con tarifa de operador más el
+trabajador que va; el mantenimiento, igual. El **precio** no vive en el catálogo — vive por
+equipo y con vigencia, en `equipo_tarifa`, que es del bloque siguiente.
+
+**Duda de plan que hay que resolver:** el límite `max_sucursales` del plan contratado ahora
+no tiene una tabla `sucursal` que contar. ¿Cuenta todas las ubicaciones, o solo las de tipo
+`Sucursal`? Cuento todas mientras nadie diga lo contrario — es lo que escala con el tamaño
+de la empresa — pero hay que confirmarlo.
+
+### La migración de catálogos se reescribió, y la plantilla quedó desalineada
+
+`EmpresaCatalogosOrganizacion` se **quitó y se regeneró** como
+`EmpresaCatalogosOrganizacionTarifas`, con la ubicación corregida y la tabla `tarifa`. Se
+pudo reescribir en lugar de encimar una corrección porque **nunca llegó a `demo` ni a
+`bajio`**: solo se había aplicado a `maquinaria_plantilla`, que es desechable por diseño.
+
+**Pero eso deja la plantilla inconsistente:** tiene la tabla `sucursal`, la `ubicacion`
+vieja, y una fila en `__EFMigrationsHistory` de una migración que ya no existe. En cuanto
+haya credencial hay que **borrar y recrear `maquinaria_plantilla`** — no intentar migrarla.
+
+### No se pudo aplicar ni verificar nada
+
+La credencial de Neon en `user-secrets` devuelve `28P01: password authentication failed for
+user 'neondb_owner'`. El código compila y la migración se genera —EF no necesita la base
+para eso— pero **nada de esto está aplicado ni probado contra la base real**, que es como se
+ha verificado todo lo demás en este proyecto. Queda pendiente en cuanto vuelva la cadena.
 
 ### Fase 1, bloque A: catálogos, ubicación y trabajadores — 2026-08-24
 

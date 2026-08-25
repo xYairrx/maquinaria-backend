@@ -152,15 +152,15 @@ builder.Services.AddAuthorizationBuilder()
 
 var app = builder.Build();
 
-// --------------------------------------------------------------- comandos ----
-// `dotnet run --project src/Maquinaria.Api -- migrar-empresas` corre y termina.
+// ------------------------------------------------------------------ comandos --
+// Antes de armar la tuberia HTTP: si se invoco un comando, se ejecuta y se sale.
 //
-// Va AQUI, antes de configurar el pipeline: el comando usa el mismo contenedor y la
-// misma configuracion que la API —incluidas las dos cadenas de conexion, que viven en
-// los user-secrets de este proyecto— pero no levanta ningun puerto ni siembra nada.
-if (ComandoMigrarEmpresas.EstaSolicitado(args))
+// Corre con EL MISMO contenedor que la aplicacion, asi que usa la misma resolucion de
+// conexiones. Un comando con su propio arranque seria un segundo camino de codigo que
+// puede divergir del que corre en produccion.
+if (args.Length > 0 && args[0] == ComandoMigrarEmpresas.Nombre)
 {
-    return await ComandoMigrarEmpresas.EjecutarAsync(app.Services);
+    return await ComandoMigrarEmpresas.EjecutarAsync(app, args);
 }
 
 app.UseExceptionHandler();
@@ -211,14 +211,12 @@ app.MapearPlanes();
 app.MapearSaludEsquemas();
 app.MapearAccesoEmpresa();
 app.MapearSesionEmpresa();
+app.MapearEsquema();
 
 await app.SembrarSuperadminAsync();
 
 app.Run();
 
-// EXPLICITO Y NO IMPLICITO: en cuanto un `return` de la rama de comandos devuelve un
-// entero, el punto de entrada es int y el compilador exige que TODOS los caminos
-// devuelvan uno (CS0161). Este es el "arranco la API y termino bien".
 return 0;
 
 /// <summary>Nombres de las politicas de autorizacion, para no repetir cadenas.</summary>

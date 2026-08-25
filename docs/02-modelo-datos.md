@@ -14,13 +14,18 @@ El documento lo dice con claridad: *"el equipo será el eje central de la inform
 ```mermaid
 graph LR
     C[Cliente] --> R[Renta]
-    O[Obra] --> R
+    O["Obra
+    (no en Fase 1)"] --> R
     E[Equipo] --> R
     R --> RENT[Rentabilidad]
     E --> RENT
     C --> RENT
     O --> RENT
 ```
+
+> `Obra` sigue en este diagrama porque el documento es conceptual y cubre los 26 módulos,
+> pero **no es tabla en la Fase 1**: se sustituyó por una descripción y una dirección
+> dentro de `renta`. Ver §2.4.
 
 **Equipo** acumula la historia física y de costos. **Renta** es la transacción que conecta todo. Casi toda la información económica del sistema es una arista entre estos dos.
 
@@ -41,7 +46,7 @@ Cinco decisiones que definen el modelo. Cada una resuelve un problema que, mal r
 | `id` | uuid |
 | `equipo_id` | uuid |
 | `periodo` | `tstzrange` |
-| `motivo` | enum: `Renta`, `Reserva`, `Mantenimiento`, `Traslado`, `Bloqueo` |
+| `motivo` | enum: `Renta`, `Reserva`, `Mantenimiento`, `Traslado`, `Bloqueo`, `Venta` |
 | `referencia_id` | uuid (a la renta, orden de trabajo, etc.) |
 | `activo` | boolean |
 
@@ -71,6 +76,8 @@ Con esto:
 
 Esta es, por sí sola, la razón técnica más fuerte para haber elegido PostgreSQL. **No implementar esta regla en código de aplicación.**
 
+> **`motivo = Venta` se agregó el 2026-08-25.** Al finalizar una orden de venta, el equipo cierra su calendario con una fila de ocupación abierta, y con eso deja de poder rentarse **sin que el módulo de rentas sepa nada de ventas**. Es el punto de unión entre las dos cosas.
+
 ### 2.2 La subrenta no es una entidad aparte
 
 **Problema.** El módulo 30 permite rentar al cliente un equipo que la empresa no posee. Si se modela como una tabla `equipo_subrentado` separada, hay que duplicar inspecciones, fletes, evidencias, horómetros y contratos para ambos tipos. Es el doble de código y el doble de bugs.
@@ -95,7 +102,19 @@ Se pierde la integridad referencial declarativa. Se compensa con:
 
 Es el intercambio correcto: siete tablas casi idénticas tienen un costo de mantenimiento permanente, mientras que el riesgo del huérfano es acotado y detectable.
 
-### 2.4 Obra es una entidad de primer nivel
+### 2.4 ~~Obra es una entidad de primer nivel~~ — retirada de la Fase 1 el 2026-08-25
+
+> **Decisión del negocio: en el primer entregable `obra` NO es tabla.** Se sustituye por
+> `lugar_descripcion` —obligatoria— más la dirección, dentro de `renta`. Así capturar una
+> renta no obliga a dar de alta una obra primero, que es fricción real en el mostrador.
+>
+> **Lo que se pierde, y hay que tenerlo claro:** el M27 pide *"reportes de rentabilidad:
+> equipo, cliente, obra, sucursal y flete"*, y con una descripción de texto libre no se
+> puede agrupar por obra de forma confiable — "Torre Norte" y "torre norte" son dos obras
+> distintas para un `GROUP BY`. Si esa rentabilidad se vuelve a pedir, la obra regresa
+> como tabla.
+
+El razonamiento original, que sigue siendo válido si vuelve:
 
 La "obra" aparece en cotizaciones, contratos, rentas, logística y en tres reportes de rentabilidad, pero **el documento no le dedica un módulo**. Es un hueco de la especificación, no una entidad menor: es el centro de costo del cliente y el documento dice explícitamente que *"todas las operaciones económicas relacionadas deben acumularse en el centro de costo correspondiente"*.
 
@@ -166,11 +185,14 @@ El QR no es una tabla: es un `token_qr` único en `Equipo`.
 
 ### Comercial — M4, M5, M6, M7
 
+> **Simplificado para la Fase 1, el 2026-08-25.** `CONTACTO_CLIENTE` y
+> `DOMICILIO_CLIENTE` se absorbieron dentro de `CLIENTE`, y `OBRA` se sustituyó por una
+> descripción y una dirección **dentro de la renta**. El diagrama de abajo refleja el
+> diseño vigente; ver [`06-alcance-fase1.md`](06-alcance-fase1.md) §6 para las
+> consecuencias.
+
 ```mermaid
 erDiagram
-    CLIENTE ||--o{ CONTACTO_CLIENTE : tiene
-    CLIENTE ||--o{ DOMICILIO_CLIENTE : tiene
-    CLIENTE ||--o{ OBRA : "centro de costo"
     CLIENTE ||--o{ COTIZACION : solicita
     COTIZACION ||--o{ COTIZACION_LINEA : contiene
     COTIZACION ||--o| CONTRATO : "se formaliza en"
@@ -178,7 +200,6 @@ erDiagram
     RENTA ||--o{ RENTA_LINEA : "equipo rentado"
     RENTA ||--o{ RENTA_CARGO : "extras, daños, excedentes"
     RENTA ||--o{ EXTENSION_RENTA : "prórroga"
-    OBRA ||--o{ RENTA : "se ejecuta en"
 ```
 
 `Cliente` incluye el "semáforo": una clasificación **calculada**, no capturada (puntualidad, saldo, daños, extensiones, historial de pago).

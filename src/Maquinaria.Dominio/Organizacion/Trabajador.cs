@@ -33,8 +33,13 @@ public class Trabajador
 
     public Guid PuestoId { get; set; }
 
-    /// <summary>A que plaza esta adscrito. Nullable: puede ser corporativo.</summary>
-    public Guid? SucursalId { get; set; }
+    /// <summary>
+    /// A que sitio esta adscrito. Nullable: puede no tener uno fijo.
+    ///
+    /// Deberia ser una ubicacion ADMINISTRATIVA —sucursal o patio—, no una bodega. Eso
+    /// cruza dos tablas y lo hace cumplir el dominio, no un CHECK.
+    /// </summary>
+    public Guid? UbicacionId { get; set; }
 
     /// <summary>
     /// Su cuenta en el sistema, si tiene. NULL significa que trabaja aqui pero no entra
@@ -58,5 +63,5 @@ public class Trabajador
 
     public Puesto? Puesto { get; set; }
 
-    public Sucursal? Sucursal { get; set; }
+    public Ubicacion? Ubicacion { get; set; }
 }

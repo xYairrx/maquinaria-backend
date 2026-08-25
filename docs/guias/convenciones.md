@@ -1,4 +1,4 @@
-# Convenciones y reglas duras
+﻿# Convenciones y reglas duras
 
 ## Convenciones
 
@@ -75,6 +75,7 @@ Nunca un fork "para on-premise". La diferencia entre modalidades es **configurac
 `IAlmacenamientoArchivos` está previsto por esto, con `AlmacenamientoDisco` para desarrollo y `AlmacenamientoS3` para producción — **previsto, no escrito**: al 2026-08-25 solo se lo cita en comentarios, y sigue en la lista de pendientes de la Fase 0.
 
 La abstracción equivalente para el correo **ya existe** (2026-08-24): `IEnviadorCorreo`, con `CorreoEnLog` para desarrollo y `CorreoResend` para la nube, elegido por `Correo:Proveedor`. Un cliente on-premise usará su propio SMTP y ese es el hueco que la interfaz deja abierto.
+`IAlmacenamientoArchivos` existe por esto, con `AlmacenamientoDisco` para desarrollo y `AlmacenamientoS3` para producción. `IEnviadorCorreo` ya cumple lo mismo para el correo, con `CorreoEnLog` en desarrollo y `CorreoResend` en producción — **falta la implementación SMTP**, que es la que necesitará un cliente on-premise.
 
 Ninguna instalación puede depender de un servicio central nuestro para funcionar. Esa es la razón definitiva por la que no hay un servicio de identidad central: un SSO hospedado por nosotros haría imposible el on-premise.
 

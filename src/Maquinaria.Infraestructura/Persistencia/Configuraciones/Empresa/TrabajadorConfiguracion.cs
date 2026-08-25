@@ -51,11 +51,11 @@ internal sealed class TrabajadorConfiguracion : IEntityTypeConfiguration<Trabaja
             .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("fk_trabajador_puesto");
 
-        trabajador.HasOne(t => t.Sucursal)
+        trabajador.HasOne(t => t.Ubicacion)
             .WithMany()
-            .HasForeignKey(t => t.SucursalId)
+            .HasForeignKey(t => t.UbicacionId)
             .OnDelete(DeleteBehavior.Restrict)
-            .HasConstraintName("fk_trabajador_sucursal");
+            .HasConstraintName("fk_trabajador_ubicacion");
 
         // La FK va de este lado para NO tocar la tabla usuario, que es de la Fase 0 y ya
         // esta migrada en las bases que existan.

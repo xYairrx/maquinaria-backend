@@ -10,13 +10,12 @@ internal sealed class UbicacionConfiguracion : IEntityTypeConfiguration<Ubicacio
     {
         ubicacion.ToTable("ubicacion", tabla =>
         {
-            tabla.HasCheckConstraint("ubicacion_tipo", "tipo BETWEEN 1 AND 4");
+            tabla.HasCheckConstraint("ubicacion_tipo", "tipo BETWEEN 1 AND 3");
 
             // Las dos o ninguna: media coordenada no ubica nada, y dejarla a medias
             // haria que el calculo de rutas de la Fase 2 tuviera que desconfiar del dato.
             tabla.HasCheckConstraint(
-                "ubicacion_coordenadas",
-                "(latitud IS NULL) = (longitud IS NULL)");
+                "ubicacion_coordenadas", "(latitud IS NULL) = (longitud IS NULL)");
 
             tabla.HasCheckConstraint(
                 "ubicacion_latitud", "latitud IS NULL OR latitud BETWEEN -90 AND 90");
@@ -34,14 +33,19 @@ internal sealed class UbicacionConfiguracion : IEntityTypeConfiguration<Ubicacio
         ubicacion.Property(u => u.Latitud).HasColumnType("numeric(9,6)");
         ubicacion.Property(u => u.Longitud).HasColumnType("numeric(9,6)");
 
-        ubicacion.HasIndex(u => new { u.SucursalId, u.Codigo })
+        // El codigo es unico GLOBAL, no por sucursal: ya no hay sucursal padre.
+        ubicacion.HasIndex(u => u.Codigo)
             .IsUnique()
             .HasDatabaseName("ubicacion_codigo_unico");
 
-        ubicacion.HasOne(u => u.Sucursal)
-            .WithMany(s => s.Ubicaciones)
-            .HasForeignKey(u => u.SucursalId)
-            .OnDelete(DeleteBehavior.Restrict)
-            .HasConstraintName("fk_ubicacion_sucursal");
+        ubicacion.HasIndex(u => u.Tipo)
+            .HasDatabaseName("ix_ubicacion_tipo");
+
+        // EF las ignora porque no las escribe la aplicacion: en la base son COLUMNAS
+        // GENERADAS a partir de tipo, y se agregan con SQL crudo en la migracion junto
+        // con los indices que permiten referenciarlas. EF Core no sabe expresar
+        // GENERATED ALWAYS ... STORED, y tampoco intenta borrar columnas que no conoce.
+        ubicacion.Ignore(u => u.AlmacenaEquipo);
+        ubicacion.Ignore(u => u.EsAdministrativa);
     }
 }

@@ -13,8 +13,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Maquinaria.Infraestructura.Migraciones.Empresa
 {
     [DbContext(typeof(ContextoEmpresa))]
-    [Migration("20260824232637_EmpresaCatalogosOrganizacion")]
-    partial class EmpresaCatalogosOrganizacion
+    [Migration("20260825162805_EmpresaCatalogosFase1")]
+    partial class EmpresaCatalogosFase1
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -269,6 +269,125 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                     b.ToTable("tipo_equipo", (string)null);
                 });
 
+            modelBuilder.Entity("Maquinaria.Dominio.Comercial.Clausula", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<DateTime?>("ActualizadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("actualizado_en");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("codigo");
+
+                    b.Property<DateTime>("CreadoEn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("creado_en")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<bool>("Obligatoria")
+                        .HasColumnType("boolean")
+                        .HasColumnName("obligatoria");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("integer")
+                        .HasColumnName("orden");
+
+                    b.Property<string>("Texto")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("texto");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("titulo");
+
+                    b.HasKey("Id")
+                        .HasName("pk_clausula");
+
+                    b.HasIndex("Codigo")
+                        .IsUnique()
+                        .HasDatabaseName("clausula_codigo_unico");
+
+                    b.HasIndex("Orden")
+                        .HasDatabaseName("ix_clausula_obligatorias")
+                        .HasFilter("obligatoria AND activo");
+
+                    b.ToTable("clausula", null, t =>
+                        {
+                            t.HasCheckConstraint("clausula_texto_no_vacio", "length(btrim(texto)) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Maquinaria.Dominio.Comercial.Tarifa", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<bool>("AplicaRenta")
+                        .HasColumnType("boolean")
+                        .HasColumnName("aplica_renta");
+
+                    b.Property<bool>("AplicaVenta")
+                        .HasColumnType("boolean")
+                        .HasColumnName("aplica_venta");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("codigo");
+
+                    b.Property<DateTime>("CreadoEn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("creado_en")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Descripcion")
+                        .HasColumnType("text")
+                        .HasColumnName("descripcion");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("nombre");
+
+                    b.Property<short>("Unidad")
+                        .HasColumnType("smallint")
+                        .HasColumnName("unidad");
+
+                    b.HasKey("Id")
+                        .HasName("pk_tarifa");
+
+                    b.HasIndex("Codigo")
+                        .IsUnique()
+                        .HasDatabaseName("tarifa_codigo_unico");
+
+                    b.ToTable("tarifa", null, t =>
+                        {
+                            t.HasCheckConstraint("tarifa_aplica_en_algo", "aplica_renta OR aplica_venta");
+
+                            t.HasCheckConstraint("tarifa_unidad", "unidad BETWEEN 1 AND 6");
+                        });
+                });
+
             modelBuilder.Entity("Maquinaria.Dominio.Configuracion.Parametro", b =>
                 {
                     b.Property<Guid>("Id")
@@ -344,51 +463,6 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                     b.ToTable("puesto", (string)null);
                 });
 
-            modelBuilder.Entity("Maquinaria.Dominio.Organizacion.Sucursal", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<bool>("Activo")
-                        .HasColumnType("boolean")
-                        .HasColumnName("activo");
-
-                    b.Property<string>("Codigo")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("codigo");
-
-                    b.Property<DateTime>("CreadoEn")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("creado_en")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("Domicilio")
-                        .HasColumnType("text")
-                        .HasColumnName("domicilio");
-
-                    b.Property<string>("Nombre")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("nombre");
-
-                    b.Property<string>("Telefono")
-                        .HasColumnType("text")
-                        .HasColumnName("telefono");
-
-                    b.HasKey("Id")
-                        .HasName("pk_sucursal");
-
-                    b.HasIndex("Codigo")
-                        .IsUnique()
-                        .HasDatabaseName("sucursal_codigo_unico");
-
-                    b.ToTable("sucursal", (string)null);
-                });
-
             modelBuilder.Entity("Maquinaria.Dominio.Organizacion.Trabajador", b =>
                 {
                     b.Property<Guid>("Id")
@@ -440,13 +514,13 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                         .HasColumnType("uuid")
                         .HasColumnName("puesto_id");
 
-                    b.Property<Guid?>("SucursalId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("sucursal_id");
-
                     b.Property<string>("Telefono")
                         .HasColumnType("text")
                         .HasColumnName("telefono");
+
+                    b.Property<Guid?>("UbicacionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ubicacion_id");
 
                     b.Property<Guid?>("UsuarioId")
                         .HasColumnType("uuid")
@@ -465,8 +539,8 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                     b.HasIndex("PuestoId")
                         .HasDatabaseName("ix_trabajador_puesto_id");
 
-                    b.HasIndex("SucursalId")
-                        .HasDatabaseName("ix_trabajador_sucursal_id");
+                    b.HasIndex("UbicacionId")
+                        .HasDatabaseName("ix_trabajador_ubicacion_id");
 
                     b.HasIndex("UsuarioId")
                         .IsUnique()
@@ -505,6 +579,10 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                         .HasColumnName("creado_en")
                         .HasDefaultValueSql("now()");
 
+                    b.Property<string>("Domicilio")
+                        .HasColumnType("text")
+                        .HasColumnName("domicilio");
+
                     b.Property<decimal?>("Latitud")
                         .HasColumnType("numeric(9,6)")
                         .HasColumnName("latitud");
@@ -518,9 +596,9 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                         .HasColumnType("text")
                         .HasColumnName("nombre");
 
-                    b.Property<Guid>("SucursalId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("sucursal_id");
+                    b.Property<string>("Telefono")
+                        .HasColumnType("text")
+                        .HasColumnName("telefono");
 
                     b.Property<short>("Tipo")
                         .HasColumnType("smallint")
@@ -529,9 +607,12 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                     b.HasKey("Id")
                         .HasName("pk_ubicacion");
 
-                    b.HasIndex("SucursalId", "Codigo")
+                    b.HasIndex("Codigo")
                         .IsUnique()
                         .HasDatabaseName("ubicacion_codigo_unico");
+
+                    b.HasIndex("Tipo")
+                        .HasDatabaseName("ix_ubicacion_tipo");
 
                     b.ToTable("ubicacion", null, t =>
                         {
@@ -541,7 +622,7 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
 
                             t.HasCheckConstraint("ubicacion_longitud", "longitud IS NULL OR longitud BETWEEN -180 AND 180");
 
-                            t.HasCheckConstraint("ubicacion_tipo", "tipo BETWEEN 1 AND 4");
+                            t.HasCheckConstraint("ubicacion_tipo", "tipo BETWEEN 1 AND 3");
                         });
                 });
 
@@ -1073,11 +1154,11 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                         .IsRequired()
                         .HasConstraintName("fk_trabajador_puesto");
 
-                    b.HasOne("Maquinaria.Dominio.Organizacion.Sucursal", "Sucursal")
+                    b.HasOne("Maquinaria.Dominio.Organizacion.Ubicacion", "Ubicacion")
                         .WithMany()
-                        .HasForeignKey("SucursalId")
+                        .HasForeignKey("UbicacionId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .HasConstraintName("fk_trabajador_sucursal");
+                        .HasConstraintName("fk_trabajador_ubicacion");
 
                     b.HasOne("Maquinaria.Dominio.Seguridad.Usuario", null)
                         .WithMany()
@@ -1087,19 +1168,7 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
 
                     b.Navigation("Puesto");
 
-                    b.Navigation("Sucursal");
-                });
-
-            modelBuilder.Entity("Maquinaria.Dominio.Organizacion.Ubicacion", b =>
-                {
-                    b.HasOne("Maquinaria.Dominio.Organizacion.Sucursal", "Sucursal")
-                        .WithMany("Ubicaciones")
-                        .HasForeignKey("SucursalId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_ubicacion_sucursal");
-
-                    b.Navigation("Sucursal");
+                    b.Navigation("Ubicacion");
                 });
 
             modelBuilder.Entity("Maquinaria.Dominio.Seguridad.RolPermiso", b =>
@@ -1195,11 +1264,6 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
             modelBuilder.Entity("Maquinaria.Dominio.Organizacion.Puesto", b =>
                 {
                     b.Navigation("Trabajadores");
-                });
-
-            modelBuilder.Entity("Maquinaria.Dominio.Organizacion.Sucursal", b =>
-                {
-                    b.Navigation("Ubicaciones");
                 });
 
             modelBuilder.Entity("Maquinaria.Dominio.Seguridad.Permiso", b =>

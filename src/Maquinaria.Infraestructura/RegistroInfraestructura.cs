@@ -85,6 +85,7 @@ public static class RegistroInfraestructura
         // dar de alta empresas— y otro momento: se define una vez y se consulta mucho.
         servicios.AddScoped<ICatalogoPlanes, CatalogoPlanesEf>();
         servicios.AddScoped<CrearPlan>();
+        servicios.AddScoped<IMigradorEmpresas, MigradorEmpresasEf>();
         servicios.AddScoped<IAprovisionadorBaseDatos, AprovisionadorBaseDatosNpgsql>();
         servicios.AddScoped<ISembradorAdministrador, SembradorAdministradorEf>();
         servicios.AddScoped<AprovisionarEmpresa>();
@@ -132,10 +133,21 @@ public static class RegistroInfraestructura
             var resend = configuracion.GetSection(OpcionesResend.Seccion).Get<OpcionesResend>()
                 ?? new OpcionesResend();
 
+            // NO se lanza aqui aunque falte la llave, y esa decision costo un error:
+            // la version anterior reventaba al REGISTRAR los servicios, asi que
+            // 'migrar-empresas' —un comando que no manda ni un correo— no podia arrancar
+            // sin configurar el proveedor de correo. Registrar servicios no debe validar
+            // lo que ese arranque en concreto no va a usar.
+            //
+            // La validacion vive ahora en el constructor de CorreoResend, que se
+            // construye la primera vez que alguien intenta enviar. Se pierde el fallo al
+            // arrancar y se gana que cada camino solo exija lo que necesita; el aviso de
+            // abajo cubre el hueco.
             if (string.IsNullOrWhiteSpace(resend.Llave))
             {
-                throw new InvalidOperationException(
-                    "Correo:Proveedor es 'resend' pero falta Resend:Llave. Va en secretos.");
+                Console.Error.WriteLine(
+                    "AVISO: Correo:Proveedor es 'resend' y falta Resend:Llave. "
+                    + "El envio de correo va a fallar en cuanto se intente.");
             }
 
             // HttpClient tipado: IHttpClientFactory maneja el reciclado de conexiones,

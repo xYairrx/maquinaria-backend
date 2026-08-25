@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Maquinaria.Infraestructura.Migraciones.Empresa
 {
     /// <inheritdoc />
-    public partial class EmpresaCatalogosOrganizacion : Migration
+    public partial class EmpresaCatalogosFase1 : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -25,6 +25,26 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_categoria_equipo", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "clausula",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    codigo = table.Column<string>(type: "text", nullable: false),
+                    titulo = table.Column<string>(type: "text", nullable: false),
+                    texto = table.Column<string>(type: "text", nullable: false),
+                    orden = table.Column<int>(type: "integer", nullable: false),
+                    obligatoria = table.Column<bool>(type: "boolean", nullable: false),
+                    activo = table.Column<bool>(type: "boolean", nullable: false),
+                    creado_en = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
+                    actualizado_en = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_clausula", x => x.id);
+                    table.CheckConstraint("clausula_texto_no_vacio", "length(btrim(texto)) > 0");
                 });
 
             migrationBuilder.CreateTable(
@@ -80,20 +100,48 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                 });
 
             migrationBuilder.CreateTable(
-                name: "sucursal",
+                name: "tarifa",
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
                     codigo = table.Column<string>(type: "text", nullable: false),
                     nombre = table.Column<string>(type: "text", nullable: false),
-                    domicilio = table.Column<string>(type: "text", nullable: true),
-                    telefono = table.Column<string>(type: "text", nullable: true),
+                    descripcion = table.Column<string>(type: "text", nullable: true),
+                    unidad = table.Column<short>(type: "smallint", nullable: false),
+                    aplica_renta = table.Column<bool>(type: "boolean", nullable: false),
+                    aplica_venta = table.Column<bool>(type: "boolean", nullable: false),
                     activo = table.Column<bool>(type: "boolean", nullable: false),
                     creado_en = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("pk_sucursal", x => x.id);
+                    table.PrimaryKey("pk_tarifa", x => x.id);
+                    table.CheckConstraint("tarifa_aplica_en_algo", "aplica_renta OR aplica_venta");
+                    table.CheckConstraint("tarifa_unidad", "unidad BETWEEN 1 AND 6");
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ubicacion",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    codigo = table.Column<string>(type: "text", nullable: false),
+                    nombre = table.Column<string>(type: "text", nullable: false),
+                    tipo = table.Column<short>(type: "smallint", nullable: false),
+                    domicilio = table.Column<string>(type: "text", nullable: true),
+                    telefono = table.Column<string>(type: "text", nullable: true),
+                    latitud = table.Column<decimal>(type: "numeric(9,6)", nullable: true),
+                    longitud = table.Column<decimal>(type: "numeric(9,6)", nullable: true),
+                    activo = table.Column<bool>(type: "boolean", nullable: false),
+                    creado_en = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_ubicacion", x => x.id);
+                    table.CheckConstraint("ubicacion_coordenadas", "(latitud IS NULL) = (longitud IS NULL)");
+                    table.CheckConstraint("ubicacion_latitud", "latitud IS NULL OR latitud BETWEEN -90 AND 90");
+                    table.CheckConstraint("ubicacion_longitud", "longitud IS NULL OR longitud BETWEEN -180 AND 180");
+                    table.CheckConstraint("ubicacion_tipo", "tipo BETWEEN 1 AND 3");
                 });
 
             migrationBuilder.CreateTable(
@@ -127,7 +175,7 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                     nombre = table.Column<string>(type: "text", nullable: false),
                     apellidos = table.Column<string>(type: "text", nullable: true),
                     puesto_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    sucursal_id = table.Column<Guid>(type: "uuid", nullable: true),
+                    ubicacion_id = table.Column<Guid>(type: "uuid", nullable: true),
                     usuario_id = table.Column<Guid>(type: "uuid", nullable: true),
                     telefono = table.Column<string>(type: "text", nullable: true),
                     correo = table.Column<string>(type: "text", nullable: true),
@@ -150,44 +198,15 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                         principalColumn: "id",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
-                        name: "fk_trabajador_sucursal",
-                        column: x => x.sucursal_id,
-                        principalTable: "sucursal",
+                        name: "fk_trabajador_ubicacion",
+                        column: x => x.ubicacion_id,
+                        principalTable: "ubicacion",
                         principalColumn: "id",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "fk_trabajador_usuario",
                         column: x => x.usuario_id,
                         principalTable: "usuario",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "ubicacion",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    sucursal_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    codigo = table.Column<string>(type: "text", nullable: false),
-                    nombre = table.Column<string>(type: "text", nullable: false),
-                    tipo = table.Column<short>(type: "smallint", nullable: false),
-                    latitud = table.Column<decimal>(type: "numeric(9,6)", nullable: true),
-                    longitud = table.Column<decimal>(type: "numeric(9,6)", nullable: true),
-                    activo = table.Column<bool>(type: "boolean", nullable: false),
-                    creado_en = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_ubicacion", x => x.id);
-                    table.CheckConstraint("ubicacion_coordenadas", "(latitud IS NULL) = (longitud IS NULL)");
-                    table.CheckConstraint("ubicacion_latitud", "latitud IS NULL OR latitud BETWEEN -90 AND 90");
-                    table.CheckConstraint("ubicacion_longitud", "longitud IS NULL OR longitud BETWEEN -180 AND 180");
-                    table.CheckConstraint("ubicacion_tipo", "tipo BETWEEN 1 AND 4");
-                    table.ForeignKey(
-                        name: "fk_ubicacion_sucursal",
-                        column: x => x.sucursal_id,
-                        principalTable: "sucursal",
                         principalColumn: "id",
                         onDelete: ReferentialAction.Restrict);
                 });
@@ -230,6 +249,18 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "clausula_codigo_unico",
+                table: "clausula",
+                column: "codigo",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "ix_clausula_obligatorias",
+                table: "clausula",
+                column: "orden",
+                filter: "obligatoria AND activo");
+
+            migrationBuilder.CreateIndex(
                 name: "marca_nombre_unico",
                 table: "marca",
                 column: "nombre",
@@ -266,8 +297,8 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "sucursal_codigo_unico",
-                table: "sucursal",
+                name: "tarifa_codigo_unico",
+                table: "tarifa",
                 column: "codigo",
                 unique: true);
 
@@ -288,9 +319,9 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                 column: "puesto_id");
 
             migrationBuilder.CreateIndex(
-                name: "ix_trabajador_sucursal_id",
+                name: "ix_trabajador_ubicacion_id",
                 table: "trabajador",
-                column: "sucursal_id");
+                column: "ubicacion_id");
 
             migrationBuilder.CreateIndex(
                 name: "trabajador_numero_unico",
@@ -306,15 +337,71 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                 filter: "usuario_id IS NOT NULL");
 
             migrationBuilder.CreateIndex(
+                name: "ix_ubicacion_tipo",
+                table: "ubicacion",
+                column: "tipo");
+
+            migrationBuilder.CreateIndex(
                 name: "ubicacion_codigo_unico",
                 table: "ubicacion",
-                columns: new[] { "sucursal_id", "codigo" },
+                column: "codigo",
                 unique: true);
+            // --------------------------------------------------------------
+            // ESCRITO A MANO. EF Core no sabe expresar columnas GENERATED.
+            // --------------------------------------------------------------
+            //
+            // Las dos capacidades de una ubicacion se DERIVAN de su tipo:
+            //
+            //     bodega   (1)  almacena
+            //     sucursal (2)  administra
+            //     patio    (3)  las dos
+            //
+            // Se guardan como columnas GENERADAS y no como banderas normales porque asi
+            // es IMPOSIBLE escribir una fila incoherente —una bodega que cotiza—. Con
+            // banderas capturadas, mantenerlas en sincronia con el tipo seria trabajo de
+            // la aplicacion, y tarde o temprano una se queda atras.
+            //
+            // Y existen en la base, no solo en C#, por dos razones: para poder filtrar
+            // ("dame donde puedo guardar este equipo") sin repetir "tipo IN (1,3)" en
+            // cada consulta, y para que las reglas que CRUZAN TABLAS puedan apoyarse en
+            // ellas. Esas reglas son:
+            //
+            //   - un equipo solo puede estar en una ubicacion que almacene;
+            //   - un traspaso solo puede ir de una que almacene a otra que almacene;
+            //   - una cotizacion solo sale de una administrativa.
+            //
+            // Ninguna la alcanza un CHECK, porque miran otra tabla. Cuando existan
+            // equipo, transferencia_equipo y cotizacion, se haran cumplir con un trigger
+            // que consulte estas columnas.
+            migrationBuilder.Sql("""
+                ALTER TABLE ubicacion
+                    ADD COLUMN almacena_equipo boolean NOT NULL
+                        GENERATED ALWAYS AS (tipo IN (1, 3)) STORED,
+                    ADD COLUMN es_administrativa boolean NOT NULL
+                        GENERATED ALWAYS AS (tipo IN (2, 3)) STORED;
+                """);
+
+            // Indices parciales: las consultas reales son "donde puedo guardar" y "desde
+            // donde puedo cotizar", nunca "cuales NO almacenan". Un indice completo
+            // cargaria con filas que nadie pide.
+            migrationBuilder.Sql("""
+                CREATE INDEX ix_ubicacion_almacena ON ubicacion (nombre)
+                    WHERE almacena_equipo AND activo;
+
+                CREATE INDEX ix_ubicacion_administrativa ON ubicacion (nombre)
+                    WHERE es_administrativa AND activo;
+                """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Las columnas generadas y sus indices se van con DROP TABLE ubicacion. No
+            // hace falta deshacerlos a mano: a diferencia de una FUNCION de plpgsql, que
+            // vive en el esquema y no en la tabla, esto si pertenece a la tabla.
+            migrationBuilder.DropTable(
+                name: "clausula");
+
             migrationBuilder.DropTable(
                 name: "modelo_equipo");
 
@@ -322,10 +409,10 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                 name: "proveedor");
 
             migrationBuilder.DropTable(
-                name: "trabajador");
+                name: "tarifa");
 
             migrationBuilder.DropTable(
-                name: "ubicacion");
+                name: "trabajador");
 
             migrationBuilder.DropTable(
                 name: "marca");
@@ -337,7 +424,7 @@ namespace Maquinaria.Infraestructura.Migraciones.Empresa
                 name: "puesto");
 
             migrationBuilder.DropTable(
-                name: "sucursal");
+                name: "ubicacion");
 
             migrationBuilder.DropTable(
                 name: "categoria_equipo");

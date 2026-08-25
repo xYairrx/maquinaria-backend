@@ -39,4 +39,18 @@ public sealed class ProveedorContextoEmpresa(FabricaConexionesEmpresa fabrica)
     /// a dar contra maquinaria_plantilla y se va a notar.
     /// </summary>
     public ContextoEmpresa ParaLeerMigraciones() => ParaMigrar(fabrica.Prefijo + "plantilla");
+    /// Un contexto solo para preguntarle al ENSAMBLADO que migraciones existen.
+    ///
+    /// GetMigrations() lee el ensamblado, no la base, asi que esto NO abre conexion.
+    /// Existe para no tener que nombrar una base concreta con la unica intencion de
+    /// construir un contexto: la version anterior nombraba maquinaria_plantilla, que
+    /// es una base desechable, y ataba la revision de esquema a que siguiera existiendo.
+    /// </summary>
+    public ContextoEmpresa ParaLeerMigraciones()
+    {
+        var opciones = new DbContextOptionsBuilder<ContextoEmpresa>();
+        opciones.UsarPostgres(fabrica.CadenaCentralDirecta());
+
+        return new ContextoEmpresa(opciones.Options);
+    }
 }

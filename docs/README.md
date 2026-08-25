@@ -14,7 +14,10 @@ SaaS multi-tenant para empresas de renta de maquinaria y equipo.
 | [02-modelo-datos.md](02-modelo-datos.md) | ~75 entidades de los 26 módulos, decisiones estructurales, dónde vive cada regla | Antes de agregar una entidad o tabla |
 | [03-plan-desarrollo.md](03-plan-desarrollo.md) | Método de rebanadas verticales, fases 0 a 6, desglose de arranque | Al planear qué sigue |
 | [04-pendientes.md](04-pendientes.md) | Huecos de la especificación, decisiones de producto, riesgos técnicos | Antes de comprometer una fecha o cerrar una fase |
-| [05-esquema-fase0.md](05-esquema-fase0.md) | DDL de las 19 tablas de la Fase 0, aprovisionamiento, login, índices, migraciones | Al escribir las entidades y migraciones actuales |
+| [05-esquema-fase0.md](05-esquema-fase0.md) | DDL de las 19 tablas de la Fase 0, aprovisionamiento, login, índices, migraciones | Al escribir las entidades y migraciones de la Fase 0 |
+| [06-alcance-fase1.md](06-alcance-fase1.md) | **El alcance del primer entregable.** Qué entra, qué no, las decisiones con su historial, y el inventario de 28 tablas | **Antes de tocar cualquier cosa de la Fase 1** |
+| [06-esquema-fase1.sql](06-esquema-fase1.sql) | **El DDL completo de las 28 tablas**, con sus `CHECK`, `EXCLUDE`, columnas generadas y triggers. Se lee de corrido | Al escribir una entidad o una migración de la Fase 1 |
+| [pruebas-esquema-fase1.sql](pruebas-esquema-fase1.sql) | **30 pruebas de las garantías** contra una base real: traslape de rentas, bodega/sucursal/patio, contrato inmutable. Corre en una transacción y hace `ROLLBACK` | Después de tocar una restricción, un trigger o una columna generada |
 
 La especificación funcional original del negocio **ya está en el repositorio**:
 [`../Especificacion_Funcional_Software_Renta_Maquinaria.docx`](../Especificacion_Funcional_Software_Renta_Maquinaria.docx),

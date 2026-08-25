@@ -113,11 +113,99 @@ public sealed class AprovisionarEmpresa(
             "Tenant {Slug} registrado con plan {Plan}. Aprovisionando {NombreBd}.",
             slug, plan.Codigo, nombreBd);
 
+        return await EjecutarSecuenciaAsync(
+            tenant.Id, slug, nombreBd, alta.RazonSocial,
+            alta.CorreoAdministrador, alta.NombreAdministrador, ct);
+    }
+
+    /// <summary>
+    /// REINTENTA un alta que quedo en <see cref="EstadoAprovisionamiento.Fallida"/>.
+    ///
+    /// No repite el paso 1 —el tenant y su suscripcion ya existen y son lo unico atomico
+    /// de la secuencia— sino los pasos 2 a 6, que son los idempotentes: ExisteBaseAsync
+    /// antes del CREATE, Migrate() que ya lo es de por si, y un sembrador que reusa el
+    /// usuario y no deja dos invitaciones vigentes.
+    ///
+    /// SOLO desde Fallida, y eso no es cortesia: reintentar sobre una empresa que ya esta
+    /// Lista reemitiria la invitacion de su administrador, y quien tuviera acceso al panel
+    /// podria tomar esa cuenta sin conocer su contrasena. Sobre una en Creando se
+    /// solaparia con el intento que todavia corre.
+    /// </summary>
+    public async Task<ResultadoAlta> ReintentarAsync(
+        string slug, ReintentoDeAlta reintento, CancellationToken ct)
+    {
+        var normalizado = FormatoSlug.Normalizar(slug);
+
+        if (!FormatoSlug.EsValido(normalizado))
+        {
+            return ResultadoAlta.Rechazado(FormatoSlug.Explicacion);
+        }
+
+        if (string.IsNullOrWhiteSpace(reintento.CorreoAdministrador)
+            || string.IsNullOrWhiteSpace(reintento.NombreAdministrador))
+        {
+            return ResultadoAlta.Rechazado(
+                "Correo y nombre del administrador son obligatorios.");
+        }
+
+        var tenant = await registro.BuscarPorSlugAsync(normalizado, ct);
+
+        if (tenant is null)
+        {
+            return ResultadoAlta.Rechazado($"No existe una empresa con el identificador '{normalizado}'.");
+        }
+
+        if (tenant.EliminadoEn is not null)
+        {
+            return ResultadoAlta.Rechazado(
+                $"La empresa '{normalizado}' esta dada de baja. Reactivarla es otra operacion.");
+        }
+
+        if (tenant.EstadoAprovisionamiento != EstadoAprovisionamiento.Fallida)
+        {
+            return ResultadoAlta.Rechazado(
+                $"Solo se reintenta un alta en Fallida. '{normalizado}' esta en "
+                + $"{tenant.EstadoAprovisionamiento}.");
+        }
+
+        // REVALIDACION DEL NOMBRE DE LA BASE antes de que llegue a concatenarse en un
+        // CREATE DATABASE. Es la restriccion 2 del aprovisionamiento: los identificadores
+        // SQL no se parametrizan, asi que el formato se comprueba en C# y no se confia en
+        // el CHECK de la tabla. Que el valor venga de nuestra propia base central no lo
+        // exime: el reintento es el unico camino que toma un nombre_bd ya almacenado en
+        // lugar de derivarlo del slug recien validado.
+        var nombreBd = NombreBdDesdeSlug(normalizado);
+
+        if (tenant.NombreBd != nombreBd)
+        {
+            log.LogError(
+                "El tenant {Slug} tiene nombre_bd inesperado. No se reintenta.", normalizado);
+
+            return ResultadoAlta.Rechazado(
+                "El registro de la empresa es inconsistente. Hay que revisarlo a mano.");
+        }
+
+        log.LogInformation("Reintentando el aprovisionamiento de {Slug}.", normalizado);
+
+        return await EjecutarSecuenciaAsync(
+            tenant.Id, normalizado, nombreBd, tenant.RazonSocial,
+            reintento.CorreoAdministrador, reintento.NombreAdministrador, ct);
+    }
+
+    /// <summary>
+    /// Los pasos 2 a 6, que son los idempotentes y por tanto los reintentables. UNA SOLA
+    /// COPIA para el alta y para el reintento: si el reintento tuviera la suya, cualquier
+    /// arreglo de la secuencia habria que hacerlo dos veces.
+    /// </summary>
+    private async Task<ResultadoAlta> EjecutarSecuenciaAsync(
+        Guid tenantId, string slug, string nombreBd, string razonSocial,
+        string correoAdministrador, string nombreAdministrador, CancellationToken ct)
+    {
         try
         {
             // ---------- 2. la base ----------
             await registro.CambiarEstadoAprovisionamientoAsync(
-                tenant.Id, EstadoAprovisionamiento.Creando, ct);
+                tenantId, EstadoAprovisionamiento.Creando, ct);
 
             if (await bases.ExisteBaseAsync(nombreBd, ct))
             {
@@ -133,22 +221,25 @@ public sealed class AprovisionarEmpresa(
             var version = await bases.MigrarAsync(nombreBd, ct);
 
             // ---------- 4. el primer administrador ----------
-            var token = await sembrador.CrearAdministradorAsync(
-                nombreBd, alta.CorreoAdministrador, alta.NombreAdministrador, ct);
+            // Se usa el correo que DEVUELVE el sembrador y no el que se le paso: si la
+            // base ya tenia un administrador con acceso total —reintento—, gana ese, y la
+            // liga tiene que ir a su buzon y no al que se capturo.
+            var admin = await sembrador.CrearAdministradorAsync(
+                nombreBd, correoAdministrador, nombreAdministrador, ct);
 
             // ---------- 5. lista ----------
-            await registro.MarcarListaAsync(tenant.Id, version, ct);
+            await registro.MarcarListaAsync(tenantId, version, ct);
 
             // La cache pudo haber guardado este tenant como no-operable si algo lo
             // consulto mientras se aprovisionaba.
-            directorio.Invalidar(tenant.Id, slug);
+            directorio.Invalidar(tenantId, slug);
 
             log.LogInformation(
                 "Empresa {Slug} aprovisionada. Esquema {Version}.", slug, version);
 
             // ---------- 6. correo, best-effort ----------
-            var liga = plantillas.LigaDeInvitacion(slug, token);
-            var mensaje = plantillas.Invitacion(alta.CorreoAdministrador, alta.RazonSocial, liga);
+            var liga = plantillas.LigaDeInvitacion(slug, admin.TokenEnClaro);
+            var mensaje = plantillas.Invitacion(admin.Correo, razonSocial, liga);
             var envio = await correo.EnviarAsync(mensaje, ct);
 
             if (!envio.Enviado)
@@ -160,7 +251,7 @@ public sealed class AprovisionarEmpresa(
             }
 
             return ResultadoAlta.Exito(new EmpresaAprovisionada(
-                tenant.Id, slug, nombreBd, version, envio.Enviado,
+                tenantId, slug, nombreBd, version, envio.Enviado,
                 plantillas.DevuelveLigaEnRespuesta ? liga : null));
         }
         catch (Exception e)
@@ -172,7 +263,7 @@ public sealed class AprovisionarEmpresa(
             try
             {
                 await registro.CambiarEstadoAprovisionamientoAsync(
-                    tenant.Id, EstadoAprovisionamiento.Fallida, CancellationToken.None);
+                    tenantId, EstadoAprovisionamiento.Fallida, CancellationToken.None);
             }
             catch (Exception eEstado)
             {

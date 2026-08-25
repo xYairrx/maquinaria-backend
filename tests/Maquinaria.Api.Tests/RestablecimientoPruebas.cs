@@ -474,6 +474,9 @@ public class RestablecimientoPruebas
         }
 
         // ---- lo que este flujo no usa ----
+        public Task<Usuario?> BuscarPorIdAsync(Guid usuarioId, CancellationToken ct)
+            => throw new NotSupportedException();
+
         public Task AceptarInvitacionAsync(
             Guid usuarioId, Guid tokenId, string hashContrasena, CancellationToken ct)
             => throw new NotSupportedException();

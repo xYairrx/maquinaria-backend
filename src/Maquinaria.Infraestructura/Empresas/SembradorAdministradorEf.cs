@@ -15,12 +15,43 @@ internal sealed class SembradorAdministradorEf(
     IOptions<OpcionesCorreo> correo,
     ILogger<SembradorAdministradorEf> log) : ISembradorAdministrador
 {
-    public async Task<string> CrearAdministradorAsync(
+    public async Task<AdministradorSembrado> CrearAdministradorAsync(
         string nombreBd, string correoUsuario, string nombre, CancellationToken ct)
     {
         var normalizado = correoUsuario.Trim().ToLowerInvariant();
 
         await using var contexto = proveedor.ParaMigrar(nombreBd);
+
+        // ---------- si ya hay alguien con acceso total, ES ESE ----------
+        // El reintento de un alta que fallo DESPUES de este paso vuelve a pasar por aqui
+        // con el correo que capture quien lo dispare, y si fuera otro se crearia una
+        // SEGUNDA cuenta con acceso total — una que nadie pidio y que no aparece en la
+        // interfaz de asignaciones, porque el rol administrador no se asigna desde ahi.
+        //
+        // Asi que gana el que ya esta: el correo recibido se ignora y lo que hace el
+        // reintento es reemitirle SU invitacion. La empresa sigue teniendo exactamente
+        // una persona con acceso total, que es la garantia que este flujo sostiene.
+        var conAccesoTotal = await contexto.UsuarioRoles
+            .Join(contexto.Roles, ur => ur.RolId, r => r.Id, (ur, r) => new { ur.UsuarioId, r.AccesoTotal })
+            .Where(x => x.AccesoTotal)
+            .Select(x => x.UsuarioId)
+            .FirstOrDefaultAsync(ct);
+
+        if (conAccesoTotal != Guid.Empty)
+        {
+            var existente = await contexto.Usuarios
+                .FirstAsync(u => u.Id == conAccesoTotal, ct);
+
+            if (existente.Correo != normalizado)
+            {
+                log.LogWarning(
+                    "{NombreBd} ya tiene administrador con acceso total. Se reemite su "
+                    + "invitacion y se ignora el correo recibido.",
+                    nombreBd);
+            }
+
+            normalizado = existente.Correo;
+        }
 
         // ---------- el usuario ----------
         // IDEMPOTENTE: si un alta anterior fallo despues de este paso, reintentar no
@@ -109,7 +140,8 @@ internal sealed class SembradorAdministradorEf(
             normalizado, nombreBd);
 
         // El token EN CLARO se devuelve y no se guarda: es el unico momento en que
-        // existe.
-        return token.EnClaro;
+        // existe. Y con el va el correo que DE VERDAD se sembro, que es a donde tiene que
+        // ir la liga.
+        return new AdministradorSembrado(normalizado, token.EnClaro);
     }
 }

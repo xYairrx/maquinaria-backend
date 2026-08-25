@@ -1,4 +1,4 @@
-﻿namespace Maquinaria.Aplicacion.Empresas;
+namespace Maquinaria.Aplicacion.Empresas;
 
 /// <summary>
 /// Crea el primer usuario de una empresa recien aprovisionada, dentro de SU base.
@@ -17,7 +17,22 @@ public interface ISembradorAdministrador
     /// interfaz de asignaciones, asi que la empresa tendra exactamente una persona con
     /// acceso total.
     /// </summary>
-    /// <returns>El token EN CLARO, para armar la liga. No se guarda en ninguna parte.</returns>
-    Task<string> CrearAdministradorAsync(
+    /// <param name="correo">
+    /// A quien se pretende invitar. SE IGNORA si la base ya tiene un usuario con acceso
+    /// total: en ese caso gana el que ya esta. Por eso hay que mandar la liga al correo
+    /// que devuelve este metodo y no al que se paso aqui.
+    /// </param>
+    Task<AdministradorSembrado> CrearAdministradorAsync(
         string nombreBd, string correo, string nombre, CancellationToken ct);
 }
+
+/// <param name="Correo">
+/// El correo del administrador REAL de esa base, que puede no ser el que se pidio.
+///
+/// Se devuelve —en lugar de dar por bueno el de entrada— porque es a donde va la liga de
+/// invitacion. Mandarla al correo pedido cuando la base ya tenia otro administrador
+/// convertiria un reintento en una forma de tomar esa cuenta: quien lo dispare recibiria
+/// una liga que define la contrasena de alguien mas.
+/// </param>
+/// <param name="TokenEnClaro">Para armar la liga. No se guarda en ninguna parte.</param>
+public readonly record struct AdministradorSembrado(string Correo, string TokenEnClaro);

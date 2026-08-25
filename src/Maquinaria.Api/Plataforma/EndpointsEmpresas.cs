@@ -25,6 +25,13 @@ internal static class EndpointsEmpresas
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
+        grupo.MapPost("/{slug}/reintento", ReintentarAsync)
+            .WithName("ReintentarAltaEmpresa")
+            .WithSummary("Reintenta un alta que quedo en Fallida. Solo desde ese estado.")
+            .Produces<EmpresaAprovisionada>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
         return rutas;
     }
 
@@ -59,6 +66,39 @@ internal static class EndpointsEmpresas
         return resultado.EsRechazo
             ? Results.Problem(
                 title: "Alta rechazada",
+                detail: resultado.Motivo,
+                statusCode: StatusCodes.Status400BadRequest)
+            : Results.Problem(
+                title: "Aprovisionamiento incompleto",
+                detail: resultado.Motivo,
+                statusCode: StatusCodes.Status500InternalServerError);
+    }
+
+    /// <summary>
+    /// Vuelve a correr los pasos 2 a 6 del aprovisionamiento sobre un tenant en Fallida.
+    ///
+    /// 200 y no 201: el tenant ya existia antes de esta llamada, asi que no se creo
+    /// ningun recurso nuevo. El cuerpo es el mismo <see cref="EmpresaAprovisionada"/> del
+    /// alta, porque lo que el panel necesita mostrar es lo mismo.
+    /// </summary>
+    private static async Task<IResult> ReintentarAsync(
+        string slug, ReintentoDeAlta reintento, AprovisionarEmpresa caso, CancellationToken ct)
+    {
+        var resultado = await caso.ReintentarAsync(slug, reintento, ct);
+
+        if (resultado.Correcto)
+        {
+            return Results.Ok(resultado.Empresa!.Value);
+        }
+
+        // ponytail: los tres rechazos —slug inexistente, estado distinto de Fallida y
+        // registro inconsistente— salen todos como 400 con su motivo en el detalle, en
+        // lugar de 404 y 409 por separado. Es un endpoint del panel de plataforma, ya
+        // autenticado, y lo unico que hace la interfaz con la respuesta es mostrar el
+        // texto; distinguir codigos no cambiaria una linea del frontend.
+        return resultado.EsRechazo
+            ? Results.Problem(
+                title: "Reintento rechazado",
                 detail: resultado.Motivo,
                 statusCode: StatusCodes.Status400BadRequest)
             : Results.Problem(

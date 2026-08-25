@@ -1,4 +1,6 @@
-﻿namespace Maquinaria.Dominio.Seguridad;
+﻿using System.Linq.Expressions;
+
+namespace Maquinaria.Dominio.Seguridad;
 
 /// <summary>
 /// Liga de un solo uso, con vigencia. Una tabla para dos propositos —invitar y
@@ -51,4 +53,25 @@ public class TokenAcceso
     public DateTime CreadoEn { get; set; }
 
     public Usuario? Usuario { get; set; }
+
+    /// <summary>
+    /// QUE SIGNIFICA QUE UN TOKEN SIRVA, escrito UNA SOLA VEZ: del proposito pedido,
+    /// sin usar, sin invalidar y sin caducar.
+    ///
+    /// Es una Expression y no un metodo normal a proposito. Un metodo no se puede
+    /// traducir a SQL —EF Core solo entiende arboles de expresion— asi que la regla
+    /// habria acabado escrita dos veces: una en la consulta de infraestructura y otra
+    /// en cualquier prueba que quiera comprobarla sin base de datos. Dos copias de una
+    /// regla de seguridad es una copia que se queda atras.
+    ///
+    /// El proposito va DENTRO de la condicion, no como filtro aparte, porque es
+    /// justamente la parte que un copy-paste del flujo de invitacion olvidaria: sin
+    /// el, un token emitido para invitar serviria para restablecer.
+    /// </summary>
+    public static Expression<Func<TokenAcceso, bool>> Vigente(
+        PropositoToken proposito, DateTime ahoraUtc)
+        => t => t.Proposito == proposito
+            && t.UsadoEn == null
+            && t.InvalidadoEn == null
+            && t.ExpiraEn > ahoraUtc;
 }

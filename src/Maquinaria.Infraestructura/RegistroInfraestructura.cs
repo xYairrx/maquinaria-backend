@@ -95,6 +95,8 @@ public static class RegistroInfraestructura
             sp => sp.GetRequiredService<IUsuariosEmpresa>);
         servicios.AddScoped<Invitaciones>();
         servicios.AddScoped<IniciarSesionEmpresa>();
+        servicios.AddScoped<SolicitarRestablecimiento>();
+        servicios.AddScoped<Restablecimientos>();
 
         servicios.AddSingleton<IGeneradorTokens, GeneradorTokensAleatorios>();
 

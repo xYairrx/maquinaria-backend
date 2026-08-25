@@ -25,6 +25,39 @@ public interface IUsuariosEmpresa
     Task AceptarInvitacionAsync(
         Guid usuarioId, Guid tokenId, string hashContrasena, CancellationToken ct);
 
+    // ----------------------------------------------------- restablecimiento --
+    /// <summary>
+    /// Invalida los tokens pendientes DEL MISMO PROPOSITO y emite el nuevo, en una
+    /// transaccion.
+    ///
+    /// Las dos cosas van juntas por lo mismo que en el sembrador de administradores: si
+    /// se invalidara sin emitir, la persona se queda sin liga y sin saberlo; si se
+    /// emitiera sin invalidar, quedan dos ligas validas circulando y la vieja —la que
+    /// pudo haber visto quien intercepto el correo— sigue abriendo la cuenta.
+    ///
+    /// Solo del mismo proposito: pedir un restablecimiento NO debe cancelar la
+    /// invitacion pendiente de alguien, que es otro flujo con otra vigencia.
+    /// </summary>
+    Task EmitirTokenAsync(
+        Guid usuarioId, PropositoToken proposito, string hashToken, DateTime expiraEn,
+        CancellationToken ct);
+
+    /// <summary>
+    /// Guarda la contrasena nueva, QUEMA el token y REVOCA TODAS LAS SESIONES DE
+    /// REFRESCO del usuario, en una transaccion.
+    ///
+    /// La revocacion no es un extra: si alguien restablece porque le tomaron la cuenta y
+    /// las sesiones del atacante siguen vivas, el restablecimiento no sirvio de nada
+    /// —el atacante conserva acceso indefinido rotando su refresh token—. Cambiar la
+    /// contrasena sin cerrar sesiones es la mitad de la operacion.
+    ///
+    /// NO toca el estado del usuario, a diferencia de AceptarInvitacionAsync: quien
+    /// restablece ya estaba Activo, y "activar" aqui seria una forma de resucitar a un
+    /// suspendido o a uno de baja.
+    /// </summary>
+    Task RestablecerContrasenaAsync(
+        Guid usuarioId, Guid tokenId, string hashContrasena, CancellationToken ct);
+
     // --------------------------------------------------------------- login --
     Task<Usuario?> BuscarPorCorreoAsync(string correo, CancellationToken ct);
 

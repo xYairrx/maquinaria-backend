@@ -19,4 +19,11 @@
     <ProjectReference Include="..\Maquinaria.Infraestructura\Maquinaria.Infraestructura.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- La decision de que origenes acepta CORS es logica de seguridad y tiene que
+         poder probarse. Se abre a las pruebas en lugar de volver publicos tipos que
+         nadie fuera de la Api tiene por que ver. -->
+    <InternalsVisibleTo Include="Maquinaria.Api.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -25,10 +25,17 @@ builder.Services.AgregarInfraestructura(builder.Configuration);
 // ---------------------------------------------------------------- errores ----
 // ProblemDetails para todo, incluidos los 401 y 404 que genera el propio framework.
 // El frontend corre en otro origen —Angular en :4200, la API en :5123— asi que sin
-// CORS el navegador bloquea toda llamada. Los origenes permitidos son configuracion.
+// CORS el navegador bloquea toda llamada.
+//
+// Ya no es una lista de origenes: cada empresa vive en su propio subdominio, asi que
+// el conjunto es abierto y crece con cada cliente. La decision de que se acepta esta
+// en OrigenesPermitidos, con el porque de cada comprobacion.
+var opcionesCors = builder.Configuration.GetSection(OpcionesCors.Seccion).Get<OpcionesCors>()
+    ?? new OpcionesCors();
+
 builder.Services.AddCors(opciones =>
     opciones.AddDefaultPolicy(politica => politica
-        .WithOrigins(builder.Configuration.GetSection("Cors:Origenes").Get<string[]>() ?? [])
+        .SetIsOriginAllowed(origen => OrigenesPermitidos.EsPermitido(origen, opcionesCors))
         .AllowAnyHeader()
         .AllowAnyMethod()));
 
@@ -60,6 +67,21 @@ builder.Services.AddRateLimiter(opciones =>
             {
                 PermitLimit = 10,
                 Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+
+    // Pedir un restablecimiento manda correo, y eso cambia a quien le cuesta el abuso:
+    // no es un intento fallido contra nosotros, es un mensaje al buzon de un tercero y
+    // un consumo de la cuota del proveedor. Cupo mas chico y ventana mas larga que
+    // PoliticaAcceso, con la misma particion por slug e IP.
+    opciones.AddPolicy(EndpointsEmpresa.PoliticaRestablecimiento, contexto =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: (contexto.Request.RouteValues["slug"]?.ToString() ?? "?")
+                + "|" + (contexto.Connection.RemoteIpAddress?.ToString() ?? "?"),
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 3,
+                Window = TimeSpan.FromMinutes(15),
                 QueueLimit = 0,
             }));
 
@@ -138,7 +160,26 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors();
 
-app.UseHttpsRedirection();
+// EN DESARROLLO NO SE REDIRIGE A HTTPS, y no es una relajacion caprichosa: rompia todas
+// las llamadas del navegador.
+//
+// El sintoma era enganoso. El preflight OPTIONS salia por http://localhost:5123 y
+// respondia 204 —CORS bien—, pero la peticion real se redirigia a https://localhost:7020
+// y ahi el navegador cortaba con ERR_CERT_AUTHORITY_INVALID, porque el certificado de
+// desarrollo no esta en el almacen de confianza. Angular solo ve un error de red, asi
+// que la pantalla dice "no se pudo contactar al servidor" mientras la API responde
+// perfectamente a curl y a PowerShell, que no validan el certificado igual.
+//
+// La alternativa es 'dotnet dev-certs https --trust' en cada maquina y apuntar el
+// frontend al 7020. Es igual de valido y mas parecido a produccion, pero exige un paso
+// manual por maquina que nada verifica: quien lo olvide pierde la tarde con un error que
+// no habla de certificados.
+//
+// En produccion la redireccion sigue activa, que es donde importa.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseRateLimiter();
 

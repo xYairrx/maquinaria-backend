@@ -32,6 +32,11 @@ public static class SlugsReservados
         "www",
         "soporte",
         "status",
+
+        // Donde vive la pantalla que pregunta a que empresa entras. Con el subdominio
+        // como identificador de tenant, dejar este libre permitiria que una empresa se
+        // quedara con la puerta de entrada de todas las demas.
+        "login",
     };
 
     public static bool EstaReservado(string slug)

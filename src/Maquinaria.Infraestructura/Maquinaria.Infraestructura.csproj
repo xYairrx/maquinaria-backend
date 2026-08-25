@@ -21,4 +21,12 @@
     <ProjectReference Include="..\Maquinaria.Aplicacion\Maquinaria.Aplicacion.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Las consultas de EF se abren a las pruebas. Una proyeccion que no traduce a SQL no
+         falla al compilar: falla en tiempo de ejecucion, la primera vez que alguien abre la
+         pantalla. Comprobar que traduce es lo unico que se puede hacer sin base de datos, y
+         para eso hace falta llegar a los repositorios, que son internal a proposito. -->
+    <InternalsVisibleTo Include="Maquinaria.Api.Tests" />
+  </ItemGroup>
+
 </Project>

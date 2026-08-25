@@ -41,6 +41,18 @@
 - [x] **Servicio de aprovisionamiento**, con su endpoint `POST /api/plataforma/empresas`. Probado creando una empresa real de punta a punta
 - [x] Abstracción de correo `IEnviadorCorreo`, con `CorreoEnLog` para desarrollo y `CorreoResend` para la nube
 - [x] `GET /api/plataforma/empresas`: listado con estado de aprovisionamiento, plan y módulos. Usa subconsultas y no joins, para que un tenant **sin** suscripción aparezca con plan nulo en lugar de desaparecer — que son justo los que hay que ver
+- [x] **Catálogo comercial**: `GET /api/plataforma/planes`, `POST /api/plataforma/planes`,
+  `PATCH /api/plataforma/planes/{codigo}/activo` y `GET /api/plataforma/modulos` (2026-08-25).
+  Es la salida del pendiente de planes de [`04-pendientes.md`](../04-pendientes.md) §3, que
+  pedía expresamente que los precios se carguen desde el panel y no por migración
+  —serían *append-only* y cambiar un precio exigiría un despliegue—.
+
+  **El plan es su conjunto de módulos**, no un paquete de cupos: los cupos siguen colgando
+  del tenant en `tenant_limite`. Un plan sin módulos se rechaza, porque la empresa que lo
+  contratara entraría y no vería ni una pantalla, sin ningún error de por medio.
+
+  **No hay PUT ni PATCH del plan completo, y es una decisión**: ver los dos huecos que la
+  cierran en la sección de abajo. Lo que sí se puede es retirar un plan y crear su sucesor.
 - [ ] Comando `migrar-empresas` + endpoint de salud que reporte quién quedó atrasado
 - [ ] Endpoint para **reintentar** un alta en `Fallida`. La secuencia ya es idempotente; falta el disparador
 - [x] **Resolución de conexión por empresa**: `IDirectorioTenants` con caché, `IContextoTenant` de ámbito de petición, `MiddlewareTenant`, `FabricaConexionesEmpresa` y `ProveedorContextoEmpresa`. Ver [`01-arquitectura.md`](../01-arquitectura.md) §2.0
@@ -751,3 +763,44 @@ Al reverificar el 2026-08-24 se corrigieron dos números que se habían escrito 
 - El total de `Maquinaria.Api.Tests` es **116**, y eso sí cuadra: se confirmó corriendo la
   suite, no contando atributos a ojo. Un `[Theory]` con seis `InlineData` son seis pruebas
   para el corredor y una sola para quien lee el archivo, y ahí es donde se cuela el error.
+
+## El catálogo de planes, y por qué no se puede editar — 2026-08-25
+
+Los planes se crean y se retiran desde el panel; **no se editan**. No es una omisión, son dos
+huecos del modelo que hay que cerrar antes de que editar sea seguro.
+
+### 1. El precio no tiene historia
+
+`suscripcion` guarda `tenant_id`, `plan_id`, `inicio`, `fin` y `estado` — **ningún importe**.
+Así que cambiar `plan.precio_mensual` no solo cambia lo que pagan los suscriptores actuales:
+reescribe lo que pagaron los históricos, porque no hay dónde estuviera guardado lo anterior.
+
+Las dos salidas, y hay que elegir antes de facturar:
+
+- **Congelar el precio en la suscripción**: agregarle `precio_mensual` y `moneda`, copiados
+  del plan al contratar. Es lo mínimo y lo que hace casi todo el mundo.
+- **Versionar el plan**: un plan nuevo por cada cambio de precio, con el anterior retirado.
+  Más limpio conceptualmente y más ruidoso en el catálogo.
+
+### 2. Editar los módulos cambia el acceso de quien ya lo tiene
+
+El plan **es** su conjunto de módulos, así que quitarle uno se lo quita a todos sus
+suscriptores, retroactivamente y sin aviso. El dominio ya lo advierte en `PlanModulo`: quien
+necesite un módulo extra necesita otro plan.
+
+Si esto se vuelve común, la salida que el propio dominio propone es un `tenant_modulo` de
+excepción, espejo de `tenant_limite`: el plan sigue definiendo la base y el tenant declara
+sus añadidos.
+
+### Lo que sí es seguro, y por eso existe
+
+`PATCH /planes/{codigo}/activo` retira o reactiva. Retirar **no toca a quien ya lo tiene
+contratado** —su suscripción sigue apuntando al mismo plan con los mismos módulos—; lo único
+que cambia es que el alta de empresas deja de aceptarlo, porque `AprovisionarEmpresa` ya
+exigía que el plan estuviera activo.
+
+### Pendiente en el frontend
+
+El alta de empresa manda `codigoPlan: 'base'` **fijo en el código**
+(`paginas/plataforma/empresas/empresas.ts`). Con el catálogo real, eso pasa a ser un selector
+alimentado por `GET /planes` filtrando por activos.

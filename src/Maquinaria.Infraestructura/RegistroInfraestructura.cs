@@ -79,6 +79,12 @@ public static class RegistroInfraestructura
         // Aprovisionamiento
         // ------------------------------------------------------------------
         servicios.AddScoped<IRegistroTenants, RegistroTenantsEf>();
+
+        // El catalogo comercial: los planes y los modulos que los definen. Separado del
+        // registro de tenants porque es otra responsabilidad —administrar el catalogo, no
+        // dar de alta empresas— y otro momento: se define una vez y se consulta mucho.
+        servicios.AddScoped<ICatalogoPlanes, CatalogoPlanesEf>();
+        servicios.AddScoped<CrearPlan>();
         servicios.AddScoped<IAprovisionadorBaseDatos, AprovisionadorBaseDatosNpgsql>();
         servicios.AddScoped<ISembradorAdministrador, SembradorAdministradorEf>();
         servicios.AddScoped<AprovisionarEmpresa>();

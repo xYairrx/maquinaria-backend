@@ -195,6 +195,7 @@ app.MapHealthChecks("/salud");
 
 app.MapearPlataforma();
 app.MapearEmpresas();
+app.MapearPlanes();
 app.MapearAccesoEmpresa();
 app.MapearSesionEmpresa();
 

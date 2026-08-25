@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using System.Threading.RateLimiting;
 using Maquinaria.Api.Arranque;
+using Maquinaria.Api.Comandos;
 using Maquinaria.Api.Empresas;
 using Maquinaria.Api.Errores;
 using Maquinaria.Api.Plataforma;
@@ -151,6 +152,17 @@ builder.Services.AddAuthorizationBuilder()
 
 var app = builder.Build();
 
+// --------------------------------------------------------------- comandos ----
+// `dotnet run --project src/Maquinaria.Api -- migrar-empresas` corre y termina.
+//
+// Va AQUI, antes de configurar el pipeline: el comando usa el mismo contenedor y la
+// misma configuracion que la API —incluidas las dos cadenas de conexion, que viven en
+// los user-secrets de este proyecto— pero no levanta ningun puerto ni siembra nada.
+if (ComandoMigrarEmpresas.EstaSolicitado(args))
+{
+    return await ComandoMigrarEmpresas.EjecutarAsync(app.Services);
+}
+
 app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
@@ -196,12 +208,18 @@ app.MapHealthChecks("/salud");
 app.MapearPlataforma();
 app.MapearEmpresas();
 app.MapearPlanes();
+app.MapearSaludEsquemas();
 app.MapearAccesoEmpresa();
 app.MapearSesionEmpresa();
 
 await app.SembrarSuperadminAsync();
 
 app.Run();
+
+// EXPLICITO Y NO IMPLICITO: en cuanto un `return` de la rama de comandos devuelve un
+// entero, el punto de entrada es int y el compilador exige que TODOS los caminos
+// devuelvan uno (CS0161). Este es el "arranco la API y termino bien".
+return 0;
 
 /// <summary>Nombres de las politicas de autorizacion, para no repetir cadenas.</summary>
 internal static class PoliticasAutorizacion

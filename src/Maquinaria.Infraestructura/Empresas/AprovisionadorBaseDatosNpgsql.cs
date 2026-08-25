@@ -77,4 +77,25 @@ internal sealed class AprovisionadorBaseDatosNpgsql(
 
         return ultima;
     }
+
+    public async Task<string?> VersionAplicadaAsync(string nombreBd, CancellationToken ct)
+    {
+        await using var contexto = proveedor.ParaMigrar(nombreBd);
+
+        // Devuelve vacio si la base existe y no tiene historial; si la base NO existe,
+        // esto revienta con error de conexion. Por eso el llamador pregunta primero por
+        // ExisteBaseAsync.
+        var aplicadas = await contexto.Database.GetAppliedMigrationsAsync(ct);
+
+        return aplicadas.LastOrDefault();
+    }
+
+    public IReadOnlyList<string> VersionesDisponibles()
+    {
+        using var contexto = proveedor.ParaLeerMigraciones();
+
+        // GetMigrations lee el ENSAMBLADO, no la base: no abre ninguna conexion, asi que
+        // esto no cuesta ni un viaje a Neon.
+        return [.. contexto.Database.GetMigrations()];
+    }
 }

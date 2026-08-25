@@ -45,6 +45,31 @@ internal sealed class RegistroTenantsEf(ContextoCentral central) : IRegistroTena
                       .SetProperty(t => t.ActualizadoEn, DateTime.UtcNow),
                 ct);
 
+    public async Task ActualizarVersionEsquemaAsync(
+        Guid tenantId, string versionEsquema, CancellationToken ct)
+        => await central.Tenants
+            .Where(t => t.Id == tenantId)
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(t => t.VersionEsquema, versionEsquema)
+                      .SetProperty(t => t.ActualizadoEn, DateTime.UtcNow),
+                ct);
+
+    public async Task<IReadOnlyList<EmpresaConEsquema>> ListarConEsquemaAsync(
+        CancellationToken ct)
+        => await central.Tenants
+            .AsNoTracking()
+            .Where(t => t.EliminadoEn == null)
+            .OrderBy(t => t.Slug)
+            .Select(t => new EmpresaConEsquema(
+                t.Id,
+                t.Slug,
+                t.RazonSocial,
+                t.NombreBd,
+                t.Estado,
+                t.EstadoAprovisionamiento,
+                t.VersionEsquema))
+            .ToListAsync(ct);
+
     public async Task<IReadOnlyList<ResumenEmpresa>> ListarAsync(CancellationToken ct)
         => await central.Tenants
             .AsNoTracking()

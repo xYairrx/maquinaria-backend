@@ -29,4 +29,23 @@ public interface IAprovisionadorBaseDatos
     /// tambien las siembra. No hace falta codigo de semilla aparte.
     /// </summary>
     Task<string> MigrarAsync(string nombreBd, CancellationToken ct);
+
+    /// <summary>
+    /// La ultima migracion aplicada en esa base, leida de su __EFMigrationsHistory. Nula
+    /// si la base existe pero no tiene ninguna.
+    ///
+    /// Es la version ANTES que reporta migrar-empresas, y se lee de la base y no de
+    /// tenant.version_esquema porque la base es la verdad: si las dos difieren, lo que
+    /// esta mal es la central.
+    /// </summary>
+    Task<string?> VersionAplicadaAsync(string nombreBd, CancellationToken ct);
+
+    /// <summary>
+    /// Todas las migraciones de ContextoEmpresa que trae el codigo, EN ORDEN de
+    /// aplicacion. La ultima es la version mas avanzada disponible.
+    ///
+    /// NO CONSULTA NINGUNA BASE: sale del ensamblado. Por eso el endpoint de salud puede
+    /// llamarla sin abrir una conexion por empresa.
+    /// </summary>
+    IReadOnlyList<string> VersionesDisponibles();
 }

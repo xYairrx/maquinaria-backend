@@ -528,6 +528,59 @@ nadie referencia—, porque eso es lo que permite construir por rebanadas sin re
 
 La prueba de `auditoria` corre entera dentro de una transacción que termina en `ROLLBACK`, y no por comodidad: la tabla no se puede limpiar. **La única forma de que una fila de auditoría no exista es no confirmarla nunca**, así que el `ROLLBACK` es en sí mismo parte de la demostración. Está en el guion de pruebas junto a los 12 casos negativos.
 
+### Restablecimiento de contraseña de usuarios de empresa — 2026-08-24
+
+`POST /api/empresas/{slug}/restablecimientos` para pedir la liga, `GET .../{token}` para
+saber si sirve y `POST .../{token}` para definir la contraseña. No hizo falta migrar nada:
+`token_acceso` y `PropositoToken.RestablecerContrasena` ya lo anticipaban.
+
+**La respuesta de la solicitud es idéntica exista o no el correo, y exista o no la
+empresa.** Un formulario de recuperación se llena sin sesión y admite cualquier dirección,
+así que cualquier diferencia lo convierte en un enumerador de la lista de empleados de un
+cliente —y probando slugs, de la lista de clientes—. Se garantiza en tres capas:
+
+1. **El caso de uso no devuelve nada.** `SolicitarRestablecimiento.EjecutarAsync` es
+   `Task`, no `Task<algo>`: el endpoint no tiene sobre qué ramificar aunque alguien lo
+   intente más adelante. El cuerpo del 202 es una instancia estática única.
+2. **Tiempo constante por piso, no solo por señuelo.** El hash señuelo de
+   `IniciarSesionEmpresa` no alcanza aquí: imita el costo de un PBKDF2, no el de dos
+   escrituras y un POST a Resend. Se responde siempre al cumplirse un piso fijo de 1200 ms,
+   rellenando con espera lo que sobre, y el envío de correo va acotado a 800 ms —por debajo
+   del piso— para que el relleno nunca sea cero. El señuelo se conserva porque es la
+   defensa que no depende de que el piso esté bien dimensionado.
+3. **Las excepciones se tragan y se registran.** Una que subiera sería un 500, y un 500 que
+   solo aparece cuando la cuenta existe delata igual que un mensaje distinto.
+
+**El límite conocido de la defensa, dicho explícitamente:** si la base se degrada por
+encima del piso, el relleno se agota y la diferencia vuelve a ser medible.
+
+**Al cambiar la contraseña se revocan todas las sesiones de refresco**, dentro de la misma
+transacción que la guarda y quema el token. Si alguien restablece porque le tomaron la
+cuenta y las sesiones del atacante siguen vivas, el restablecimiento no sirvió de nada.
+
+**La regla de vigencia de un token se escribe una sola vez.** `TokenAcceso.Vigente` es una
+`Expression`, no un método: EF Core la traduce a SQL y las pruebas la compilan y la
+ejecutan sin base de datos. Dos copias de una regla de seguridad es una copia que se queda
+atrás — y la parte que un copy-paste del flujo de invitación olvidaría es justo el filtro
+por propósito, que es lo que impide que una liga de invitación cambie la contraseña de una
+cuenta activa.
+
+**El `GET` no revela nada.** El de invitación devuelve a quién va dirigida la liga porque
+es el primer contacto y la pantalla tiene que decirlo; el de restablecimiento devuelve 204
+o 404 y nada más. Quien restablece ya conoce su cuenta, así que mostrar el correo solo
+convertiría una liga adivinada en una confirmación de que esa dirección existe en esa
+empresa.
+
+**Límite de intentos propio**, más estricto que el del grupo: 3 cada 15 minutos por slug e
+IP, contra 10 por minuto. Es el único endpoint anónimo que manda correo, y eso cambia a
+quién le cuesta el abuso — le llega al buzón de un tercero y gasta cuota de Resend.
+
+**La vigencia de una hora no es configurable**, a diferencia de los días de la invitación.
+Los días son comodidad operativa; la ventana del restablecimiento es el tiempo durante el
+cual un correo interceptado abre una cuenta ajena, y dejarla en un `appsettings` es dejar
+que alguien la suba a treinta días sin darse cuenta. Vive en
+`PoliticaRestablecimiento`, en el dominio.
+
 ---
 
 ## Restricciones del aprovisionamiento

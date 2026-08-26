@@ -99,10 +99,87 @@ internal sealed class SembradorAdministradorEf(
         }
 
         // ---------- la invitacion ----------
-        // Se invalidan las pendientes ANTES de emitir la nueva: reintentar un alta no
-        // debe dejar dos ligas validas circulando.
+        var token = await EmitirInvitacionAsync(contexto, usuario.Id, normalizado, ct);
+
+        log.LogInformation(
+            "Administrador {Correo} creado en {NombreBd} con invitacion vigente.",
+            normalizado, nombreBd);
+
+        // El token EN CLARO se devuelve y no se guarda: es el unico momento en que
+        // existe. Y con el va el correo que DE VERDAD se sembro, que es a donde tiene que
+        // ir la liga.
+        return new AdministradorSembrado(normalizado, token.EnClaro);
+    }
+
+    public async Task<ResultadoReemision> ReemitirInvitacionAsync(
+        string nombreBd, CancellationToken ct)
+    {
+        // ponytail: no se revalida que `nombreBd` sea el derivado del slug, a diferencia
+        // del reintento del alta. Ahi hacia falta porque el nombre acaba concatenado en un
+        // `CREATE DATABASE`; aqui solo se abre una base que ya existe, y el formato del
+        // campo ya lo sostiene el CHECK de la tabla `tenant`.
+        await using var contexto = proveedor.ParaMigrar(nombreBd);
+
+        // El administrador es el que tiene ACCESO TOTAL, no el que alguien nombre en la
+        // peticion. Es la misma regla que sostiene el reintento del alta, y la razon por la
+        // que este metodo no recibe correo.
+        var conAccesoTotal = await contexto.UsuarioRoles
+            .Join(contexto.Roles, ur => ur.RolId, r => r.Id, (ur, r) => new { ur.UsuarioId, r.AccesoTotal })
+            .Where(x => x.AccesoTotal)
+            .Select(x => x.UsuarioId)
+            .FirstOrDefaultAsync(ct);
+
+        if (conAccesoTotal == Guid.Empty)
+        {
+            // Sin administrador sembrado no hay invitacion que reenviar: lo que le falta a
+            // esa empresa es terminar su alta, no un correo.
+            log.LogWarning("{NombreBd} no tiene administrador con acceso total.", nombreBd);
+
+            return ResultadoReemision.Rechazado(
+                "Esta empresa no tiene administrador. Su alta no se completo: reintentala.");
+        }
+
+        var usuario = await contexto.Usuarios.FirstAsync(u => u.Id == conAccesoTotal, ct);
+
+        // SOLO a quien sigue Invitado. Mandarle una invitacion a una cuenta ACTIVA le daria
+        // un segundo camino para definir contrasena sin conocer la actual, que es
+        // exactamente lo que el restablecimiento evita —y por eso el restablecimiento, al
+        // reves, rechaza a los Invitados—. Las dos puertas no pueden servir a la vez.
+        if (usuario.Estado != EstadoUsuario.Invitado)
+        {
+            log.LogInformation(
+                "No se reemite invitacion en {NombreBd}: el administrador esta {Estado}.",
+                nombreBd, usuario.Estado);
+
+            return ResultadoReemision.Rechazado(usuario.Estado switch
+            {
+                EstadoUsuario.Activo =>
+                    "El administrador ya activo su cuenta. Para recuperar el acceso tiene "
+                    + "que usar el restablecimiento de contrasena desde su pantalla de acceso.",
+                _ => "El administrador de esta empresa no puede recibir una invitacion.",
+            });
+        }
+
+        var token = await EmitirInvitacionAsync(contexto, usuario.Id, usuario.Correo, ct);
+
+        log.LogInformation(
+            "Invitacion reemitida a {Correo} en {NombreBd}.", usuario.Correo, nombreBd);
+
+        return ResultadoReemision.Exito(usuario.Correo, token.EnClaro);
+    }
+
+    /// <summary>
+    /// Invalida las invitaciones pendientes y emite una nueva, en la misma operacion.
+    ///
+    /// LAS DOS COSAS JUNTAS Y EN ESE ORDEN, que es lo unico que este metodo aporta: emitir
+    /// sin invalidar deja dos ligas validas circulando, y con una invitacion eso significa
+    /// dos caminos para definir la contrasena de la misma cuenta.
+    /// </summary>
+    private async Task<TokenGenerado> EmitirInvitacionAsync(
+        ContextoEmpresa contexto, Guid usuarioId, string correoUsuario, CancellationToken ct)
+    {
         var invalidadas = await contexto.TokensAcceso
-            .Where(t => t.UsuarioId == usuario.Id
+            .Where(t => t.UsuarioId == usuarioId
                 && t.Proposito == PropositoToken.Invitacion
                 && t.UsadoEn == null
                 && t.InvalidadoEn == null)
@@ -112,14 +189,14 @@ internal sealed class SembradorAdministradorEf(
         {
             log.LogWarning(
                 "Se invalidaron {Cuantas} invitaciones pendientes de {Correo} al reemitir.",
-                invalidadas, normalizado);
+                invalidadas, correoUsuario);
         }
 
         var token = tokens.Generar();
 
         contexto.TokensAcceso.Add(new TokenAcceso
         {
-            UsuarioId = usuario.Id,
+            UsuarioId = usuarioId,
             Proposito = PropositoToken.Invitacion,
 
             // Se guarda el HASH. Leer la base no debe dar ligas usables.
@@ -135,13 +212,6 @@ internal sealed class SembradorAdministradorEf(
 
         await contexto.SaveChangesAsync(ct);
 
-        log.LogInformation(
-            "Administrador {Correo} creado en {NombreBd} con invitacion vigente.",
-            normalizado, nombreBd);
-
-        // El token EN CLARO se devuelve y no se guarda: es el unico momento en que
-        // existe. Y con el va el correo que DE VERDAD se sembro, que es a donde tiene que
-        // ir la liga.
-        return new AdministradorSembrado(normalizado, token.EnClaro);
+        return token;
     }
 }

@@ -32,6 +32,17 @@ internal static class EndpointsEmpresas
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
+        // SIN CUERPO, y eso es la pieza de seguridad. Un campo de correo aqui reabriria la
+        // escalada de privilegios que el reintento del alta tuvo: quien tenga acceso al panel
+        // pediria la liga de una cuenta con acceso total a su propio buzon. El destinatario
+        // sale de la base de la empresa y se DEVUELVE, para que quien lo dispara vea a donde
+        // fue en lugar de preguntarselo.
+        grupo.MapPost("/{slug}/invitacion", ReenviarInvitacionAsync)
+            .WithName("ReenviarInvitacionEmpresa")
+            .WithSummary("Reemite la invitacion del administrador. Solo si sigue Invitado.")
+            .Produces<ResultadoReenvio>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
+
         return rutas;
     }
 
@@ -105,5 +116,34 @@ internal static class EndpointsEmpresas
                 title: "Aprovisionamiento incompleto",
                 detail: resultado.Motivo,
                 statusCode: StatusCodes.Status500InternalServerError);
+    }
+
+    /// <summary>
+    /// Reenvia la invitacion del administrador de una empresa.
+    ///
+    /// Existe porque el log del alta escribia «Hay que reenviarla» y no habia con que: el
+    /// reintento solo acepta empresas en `Fallida`, y una empresa cuya base se creo bien pero
+    /// cuyo correo no salio NO esta fallida. La unica salida era borrarla y volver a crearla.
+    ///
+    /// UN ENVIO QUE FALLA NO ES UN RECHAZO. Devuelve 200 con `invitacionEnviada: false`,
+    /// porque la invitacion SI se reemitio —y la anterior ya quedo invalidada—: lo que falta
+    /// es volver a intentar el correo, no repetir la operacion. Contestar un error aqui haria
+    /// creer que la liga vieja sigue sirviendo.
+    /// </summary>
+    private static async Task<IResult> ReenviarInvitacionAsync(
+        string slug, ReenviarInvitacion caso, CancellationToken ct)
+    {
+        var resultado = await caso.EjecutarAsync(slug, ct);
+
+        // ponytail: los cuatro rechazos —slug mal formado, empresa inexistente,
+        // aprovisionamiento a medias y administrador que ya no esta Invitado— salen como 400
+        // con su motivo, por lo mismo que el reintento: es un endpoint del panel, ya
+        // autenticado, y la interfaz solo muestra el texto.
+        return resultado.Correcto
+            ? Results.Ok(resultado)
+            : Results.Problem(
+                title: "Reenvio rechazado",
+                detail: resultado.Motivo,
+                statusCode: StatusCodes.Status400BadRequest);
     }
 }

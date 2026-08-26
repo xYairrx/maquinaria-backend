@@ -24,6 +24,35 @@ public interface ISembradorAdministrador
     /// </param>
     Task<AdministradorSembrado> CrearAdministradorAsync(
         string nombreBd, string correo, string nombre, CancellationToken ct);
+
+    /// <summary>
+    /// Vuelve a emitir la invitacion del administrador que YA existe en esa base, e
+    /// invalida la anterior.
+    ///
+    /// NO RECIBE CORREO, y esa ausencia es el punto entero del metodo. El destinatario
+    /// sale de la base. Un parametro de correo aqui seria la misma puerta que el reintento
+    /// del alta tuvo abierta: quien tenga acceso al panel pediria la liga de una cuenta con
+    /// acceso total a su propio buzon y definiria su contrasena.
+    ///
+    /// Existe porque el log del alta decia «hay que reenviarla» y no habia nada que lo
+    /// hiciera. Con el correo caido un rato, la unica salida era borrar la empresa y
+    /// volver a crearla.
+    /// </summary>
+    Task<ResultadoReemision> ReemitirInvitacionAsync(string nombreBd, CancellationToken ct);
+}
+
+/// <summary>
+/// El resultado de reemitir. Rechaza en lugar de lanzar porque los tres motivos son
+/// situaciones normales que la interfaz tiene que poder explicar, no fallos.
+/// </summary>
+public readonly record struct ResultadoReemision(
+    bool Correcto, string? Motivo, string Correo, string TokenEnClaro)
+{
+    public static ResultadoReemision Exito(string correo, string token) =>
+        new(true, null, correo, token);
+
+    public static ResultadoReemision Rechazado(string motivo) =>
+        new(false, motivo, string.Empty, string.Empty);
 }
 
 /// <param name="Correo">

@@ -89,6 +89,7 @@ public static class RegistroInfraestructura
         servicios.AddScoped<IAprovisionadorBaseDatos, AprovisionadorBaseDatosNpgsql>();
         servicios.AddScoped<ISembradorAdministrador, SembradorAdministradorEf>();
         servicios.AddScoped<AprovisionarEmpresa>();
+        servicios.AddScoped<ReenviarInvitacion>();
 
         // ------------------------------------------------------------------
         // Acceso de usuarios de empresa

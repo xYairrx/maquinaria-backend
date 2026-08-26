@@ -340,6 +340,10 @@ public class ReintentoAltaPruebas
 
             return Task.FromResult(new AdministradorSembrado(correo, "token-en-claro"));
         }
+
+        // ---- lo que usa el reenvio de invitacion, no el reintento ----
+        public Task<ResultadoReemision> ReemitirInvitacionAsync(
+            string nombreBd, CancellationToken ct) => throw new NotSupportedException();
     }
 
     private sealed class BuzonFalso : IEnviadorCorreo

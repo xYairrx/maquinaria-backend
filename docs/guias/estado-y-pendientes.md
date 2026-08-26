@@ -1,6 +1,73 @@
 ﻿# Estado y pendientes
 
-Última verificación: 2026-08-25.
+Última verificación: 2026-08-26.
+
+## La Fase 1 está escrita — 2026-08-26
+
+**136 endpoints en `/openapi/v1.json`**, 338 pruebas en verde, compilación con 0 errores y 0
+advertencias. Las once rebanadas de [`07-plan-fase1.md`](../07-plan-fase1.md) están
+implementadas: catálogos, ubicaciones, trabajadores, clientes, proveedores, equipos con su
+expediente y sus precios, disponibilidad, traspasos, cotizaciones, rentas con sus cinco
+procesos, contratos y compra-venta.
+
+**El detalle vive en el plan, no aquí.** Esa es la división: el plan tiene el estado por
+rebanada, las decisiones con su porqué y el inventario; esta bitácora anota lo que hay que saber
+para no repetir un error.
+
+### Lo que cambió de estructura, y por qué importa al leer el repo
+
+- **Controladores MVC, no Minimal API.** Los 19 endpoints que existían se reescribieron y los
+  nuevos siguieron ese molde. La razón de peso es la matriz de permisos:
+  `[RequierePermiso("rentas.autorizar")]` se lee en la firma del método, mientras que con Minimal
+  API sería un filtro que hay que recordar encadenar en cada endpoint.
+- **Carpetas técnicas, namespaces por módulo.** `ObjetosDTO/Rentas/`, `IServicios/Rentas/` y
+  `Procesos/Rentas/` son tres carpetas y **un** namespace. `dotnet_style_namespace_match_folder`
+  quedó en `false:silent` con el porqué escrito en `.editorconfig`.
+- **`IServicios` y `Servicios` en proyectos distintos**, a propósito: EF Core sigue viviendo solo
+  en `Infraestructura`, así que un Proceso no puede tocar el `DbContext` — lo impide el
+  compilador, no la disciplina.
+
+### Cuatro hallazgos que contradecían a los documentos
+
+1. **Solo `equipo`, `archivo` y `tenant` tienen `eliminado_en`.** `convenciones.md` da el borrado
+   lógico por hecho para «entidades de negocio» y no es cierto: los catálogos, `ubicacion`,
+   `trabajador`, `cliente`, `renta` y `cotizacion` **no lo tienen**. Consecuencia: en esas
+   tablas retirar es `PATCH .../activo` o `.../estado`, y no hay `DELETE`.
+2. **`MotivoOcupacion` no tiene `Venta`** y el `CHECK` es `BETWEEN 1 AND 6`, aunque
+   `06-alcance-fase1.md` §5 lo describa. Finalizar una venta cierra el calendario con `Bloqueo`
+   sin fecha de fin y una nota.
+3. **`EstadoContrato` no tiene `Cancelado`** —tiene `Firmado`, que el alcance no menciona—, así
+   que el camino «cancelar un contrato autorizado y hacer uno nuevo» no existe.
+4. **El `UNIQUE` de `marca.nombre` distingue mayúsculas**, así que para el motor `'Caterpillar'`
+   y `'CATERPILLAR'` son dos marcas. Se cubre con `ILIKE` exacto antes de insertar, y eso **no
+   aguanta concurrencia**.
+
+**Los cuatro se rodearon en código: el esquema no se tocó en esta fase**, por decisión explícita.
+El arreglo de verdad —una migración con `Venta`, `Cancelado`, secuencias de folio y un índice
+sobre `lower(nombre)`— está en §6 del plan.
+
+### Dos trampas nuevas
+
+- **Compilar con Visual Studio abierto.** Si hay un proceso de `Maquinaria.Api` vivo, `dotnet
+  build` y `dotnet test` fallan con `MSB3027` sin llegar a compilar. La salida es **compilar a
+  otra carpeta**: `dotnet test tests/Maquinaria.Api.Tests -o <ruta temporal>`. No hace falta
+  cerrar el IDE.
+- **`/archivos/` está en `.gitignore`.** Es la raíz del almacenamiento en disco y su contenido son
+  documentos de clientes. En cuanto alguien sube un archivo en desarrollo, esa carpeta aparece —y
+  no se commitea nunca.
+
+### Lo que falta de la fase
+
+1. **El interceptor de auditoría.** Las dos tablas `auditoria` siguen vacías: nada de lo que
+   hacen los 136 endpoints queda auditado. Es la última pieza transversal.
+2. **Las pruebas contra Postgres real.** Las 338 son unitarias y **ninguna toca la base**. Lo que
+   falta probar es justo lo que el motor garantiza: el `EXCLUDE` de no-traslape bajo dos
+   transacciones simultáneas, el trigger del contrato inmutable, los `UNIQUE`. Ningún doble lo
+   reproduce, así que **el criterio de salida está escrito y no demostrado**.
+3. **R12:** `Dockerfile`, `Jwt__Llave` en Railway, la corrida de `migrar-empresas` y el recorrido
+   completo contra una empresa real.
+
+---
 
 ## Estado actual
 

@@ -67,7 +67,18 @@ internal static class EndpointsSaludEsquemas
 
             // El conteo va calculado y no lo saca la pantalla recorriendo la lista: es el
             // numero que decide si se muestra la alerta.
-            empresas.Count(e => e.Desfasada),
+            //
+            // EXIGE `VersionReconocida`, y esa condicion no es de adorno: el comparador
+            // devuelve `Desfasada = true` cuando la version aplicada es nula, y ese caso lo
+            // produce tanto una base que nunca se migro como una que NO RESPONDIO —el
+            // migrador atrapa el fallo de lectura y deja la version en nulo—. La pantalla
+            // pinta las dos como «sin comparar», asi que contarlas aqui como desfasadas
+            // hacia que el numero de arriba contradijera a las filas de abajo: una base
+            // caida inflaba el contador de atrasadas.
+            //
+            // Se cuenta lo que la pantalla ENSEÑA como desfasado. Que una base no responda
+            // se ve en su fila, que es donde se puede hacer algo al respecto.
+            empresas.Count(e => e.Desfasada && e.VersionReconocida),
             empresas));
     }
 }

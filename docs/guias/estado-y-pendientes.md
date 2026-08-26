@@ -72,14 +72,13 @@ ya conocida. `dotnet test` deja `Maquinaria.Api.Tests` en **205 pruebas, 0 fallo
   **No hay PUT ni PATCH del plan completo, y es una decisión**: ver los dos huecos que la
   cierran en la sección de abajo. Lo que sí se puede es retirar un plan y crear su sucesor.
 - [x] **Comando `migrar-empresas` + endpoint de salud** que reporta quién quedó atrasado
-  (2026-08-25). Es un argumento de `Maquinaria.Api`, no un proyecto de consola aparte, y
-  `GET /api/plataforma/salud/esquemas` es lo que vuelve visible el desfase. Ver la sección
-  de abajo
+  (2026-08-25), **corrido contra Neon** esa misma noche. Es un argumento de `Maquinaria.Api`,
+  no un proyecto de consola aparte, y `GET /api/plataforma/salud/esquemas` es lo que vuelve
+  visible el desfase. Ver la sección de abajo y
+  [`06-alcance-fase1.md`](../06-alcance-fase1.md) §8
 - [x] Endpoint para **reintentar** un alta en `Fallida` (2026-08-25):
   `POST /api/plataforma/empresas/{slug}/reintento`. Corre el **mismo** código que el alta
   —los pasos 2 a 6 extraídos a `EjecutarSecuenciaAsync`—, no una copia
-- [ ] Comando `migrar-empresas` + endpoint de salud que reporte quién quedó atrasado
-- [x] Comando **`migrar-empresas`** con reporte por empresa, y **`GET /api/plataforma/salud/esquemas`** que dice quién quedó atrasado. Ver [`06-alcance-fase1.md`](../06-alcance-fase1.md) §8
 - [x] Diagnosticado el estado real de las cuatro bases (ver la nota de abajo)
 - [x] **Las 28 tablas de Fase 1 estan en las tres bases** (38 con las 10 de Fase 0), 7 migraciones, huella comun `b4f101c3…`, y **30 de 30 pruebas de garantias en verde** contra la base real
 - [ ] Endpoint para **reintentar** un alta en `Fallida`. La secuencia ya es idempotente; falta el disparador
@@ -101,12 +100,10 @@ ya conocida. `dotnet test` deja `Maquinaria.Api.Tests` en **205 pruebas, 0 fallo
 Un superadministrador da de alta una empresa desde el panel, el sistema le crea y migra su base automáticamente, se envía la invitación al primer administrador, esa persona define su contraseña e inicia sesión con `empresa / correo / contraseña`. Y el comando `migrar-empresas` aplica una migración nueva a todas las bases existentes reportando el resultado por empresa.
 
 **Todas las piezas de ese enunciado existen en disco al 2026-08-25**, incluida la última que
-faltaba, `migrar-empresas`. Con dos salvedades que hay que decir en voz alta, porque «existe»
-y «demostrado» no son lo mismo:
+faltaba, `migrar-empresas`, que además **ya se corrió contra Neon** esa noche: `demo` y `bajio`
+quedaron en `EmpresaCatalogosFase1`, verificado consultando las bases. Queda una salvedad que
+hay que decir en voz alta, porque «existe» y «demostrado» no son lo mismo:
 
-- **`migrar-empresas` no se ha corrido contra Neon.** La prueba de humo fue con las cadenas
-  apuntando a `127.0.0.1:1`, que verifica el cableado y el código de salida `2` y **no aplica
-  ninguna migración**. Hasta que el operador lo corra, `demo` y `bajio` siguen atrás.
 - **El envío de correo real no se ha ejercitado.** `CorreoResend` es el camino activo, pero
   falta `Resend:Llave` y un dominio verificado, así que la invitación del criterio de salida
   se ha probado con el proveedor de log y con la liga devuelta en la respuesta, que solo
@@ -815,11 +812,13 @@ igualdad y prefijos — no `%excavadora%`. Ahora es
 
 Es exactamente el escenario para el que existe `migrar-empresas`.
 
-> **Al 2026-08-25:** el comando que aquí se echaba en falta **ya está escrito** —ver la
-> sección de abajo— y con él el endpoint que hace visible el desfase. Lo que no ha cambiado
-> es el desfase en sí: `demo` y `bajio` **siguen una migración atrás** hasta que alguien
-> corra el comando contra Neon. Escribir la herramienta y usarla son dos cosas distintas, y
-> confundirlas es justo el tipo de mentira que esta bitácora existe para no contar.
+> **Cerrado el 2026-08-25 (noche).** El comando que aquí se echaba en falta se escribió y
+> **se corrió**: `demo` y `bajio` están en `EmpresaCatalogosFase1`, verificado consultando las
+> bases y no el código — ver [las cuatro bases al
+> día](#las-cuatro-bases-al-dia-y-verificado-contra-la-base-real--2026-08-25-noche). La
+> distinción que esta nota hacía sigue valiendo aunque el caso se haya cerrado: **escribir la
+> herramienta y usarla son dos cosas distintas**, y durante unas horas esta bitácora dijo que
+> el desfase seguía ahí porque seguía ahí.
 
 ### Alcance del primer entregable: se evaluó ampliarlo a venta y compra — 2026-08-21
 
@@ -1234,10 +1233,11 @@ aquí van las decisiones.
 ### Hubo dos implementaciones, y se fusionaron — 2026-08-26
 
 Esto se construyó **dos veces en paralelo**, y conviene que quede escrito porque el diff no lo
-va a explicar. El `git pull` del commit `e7aff40` traía su propia versión del comando y del
-endpoint; en esta rama ya existía otra. El merge fusionó los dos lados **sin conflicto**
-—archivos con nombres distintos haciendo lo mismo— así que durante un rato el repositorio tuvo
-dos motores, dos contratos y dos relatos en esta bitácora. El 2026-08-26 se dejó uno.
+va a explicar. El `git pull` del commit `e7aff40` «Fase 01 diseño db» traía su propia versión
+del comando y del endpoint; en esta rama ya existía otra. El merge fusionó los dos lados **sin
+conflicto** —archivos con nombres distintos haciendo lo mismo— así que durante un rato el
+repositorio tuvo dos motores, dos contratos y dos relatos en esta bitácora. El 2026-08-26 se
+dejó uno.
 
 Lo que quedó, y de dónde vino cada parte:
 
@@ -1414,26 +1414,37 @@ cincuenta líneas de pila encima del mensaje son cincuenta líneas que nadie lee
 Correo:Proveedor es 'resend' pero falta Resend:Llave. Va en secretos.
 ```
 
-Era una comprobación de arranque haciendo su trabajo en el lugar equivocado: validaba **al
-registrar los servicios**, así que `migrar-empresas` —un comando que no manda ni un correo— no
-podía correr sin configurar el proveedor de correo. La validación se movió al constructor de
-`CorreoResend`, que se construye la primera vez que alguien intenta enviar: el fallo sigue
-siendo temprano y claro, y cada camino sólo exige lo que necesita. Al registrar queda un aviso
-en `stderr` para no perder la señal.
+Era una comprobación haciendo su trabajo en el lugar equivocado: validaba **al registrar los
+servicios**, así que `migrar-empresas` —un comando que no manda ni un correo— no podía correr
+sin configurar el proveedor de correo. Al registrar quedó sólo un aviso en `stderr`, para no
+perder la señal sin bloquear ningún arranque.
+
+La comprobación pasó primero al constructor de `CorreoResend` y de ahí, el **2026-08-26**, a
+`EnviarAsync`, que ahora devuelve un `ResultadoEnvio` fallido en vez de lanzar: desde el
+constructor seguía reventando el alta de una empresa y el restablecimiento de contraseña. **Ese
+segundo movimiento tiene su propio porqué y está por escribirse aquí**; de momento vive en el
+comentario de `CorreoResend` y en el mensaje del commit «Sin Resend:Llave el correo falla, no
+revienta el flujo que lo pedia». Y deja un rastro que hay que limpiar: el comentario de
+`RegistroInfraestructura` todavía dice que la validación vive en el constructor.
 
 Es la segunda vez que un "fallo rápido" bien intencionado bloquea un camino que no le
 correspondía. La regla que queda: **el arranque valida lo que ese arranque usa.**
 
-### Cómo se probó sin tocar Neon
+### Cómo se probó, y la corrida de verdad
 
-Con las dos cadenas apuntando a `127.0.0.1:1`: el binario **reconoció el argumento, no abrió
-ningún puerto y salió con `2`**, que es exactamente el camino de «no se pudo ni empezar». Eso
-verifica el cableado —argumento, ámbito de DI, códigos de salida— sin aplicar **ninguna
-migración a ninguna base real**. Apuntado a Neon llega hasta la base, y lo único que lo detiene
-es la credencial que no autentica.
+Primero **sin tocar Neon**, con las dos cadenas apuntando a `127.0.0.1:1`: el binario
+**reconoció el argumento, no abrió ningún puerto y salió con `2`**, que es exactamente el camino
+de «no se pudo ni empezar». Eso verifica el cableado —argumento, ámbito de DI, códigos de
+salida— sin aplicar **ninguna migración a ninguna base real**.
 
-La corrida de verdad la hace el operador en su terminal, y mientras no la haga, [el desfase
-sigue ahí](#el-desfase-de-esquema-dejó-de-ser-teórico).
+Y esa misma noche **se corrió contra Neon**, que es lo que sacó a la luz los defectos de arriba
+y lo que dejó a `demo` y `bajio` en `EmpresaCatalogosFase1`. Antes hubo que pasar por un fallo
+que no era del comando: lo que parecía una credencial que no autentica era un `Database=` mal
+puesto en los secretos. El resultado, consultado contra las bases y no contra el código, está en
+[las cuatro bases al día](#las-cuatro-bases-al-dia-y-verificado-contra-la-base-real--2026-08-25-noche).
+
+**Escribir la herramienta y usarla son dos cosas distintas**, y hasta esa corrida el desfase
+seguía ahí — la bitácora las tuvo separadas a propósito hasta que hubo con qué cerrarlas.
 
 **Trampa de operación heredada:** si hay un proceso de `Maquinaria.Api` vivo, el build se
 bloquea con la DLL tomada. O se mata el proceso, o se compila una vez y se corre con

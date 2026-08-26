@@ -151,8 +151,16 @@ public static class RegistroInfraestructura
             {
                 cliente.BaseAddress = new Uri(resend.UrlBase.TrimEnd('/') + "/");
                 cliente.Timeout = TimeSpan.FromSeconds(resend.SegundosTimeout);
-                cliente.DefaultRequestHeaders.Authorization =
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", resend.Llave);
+                // Solo si hay llave. Un `Bearer` vacio no autentica nada y ademas obliga
+                // a este delegado a construir un encabezado con un parametro vacio, que
+                // es la clase de detalle que revienta en un sitio sin relacion aparente.
+                // Sin llave, `CorreoResend` devuelve un envio fallido y lo dice en el log.
+                if (!string.IsNullOrWhiteSpace(resend.Llave))
+                {
+                    cliente.DefaultRequestHeaders.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue(
+                            "Bearer", resend.Llave);
+                }
             });
         }
         else

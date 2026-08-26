@@ -1,7 +1,6 @@
 ﻿using System.Text;
 using System.Threading.RateLimiting;
 using Maquinaria.Api.Arranque;
-using Maquinaria.Api.Comandos;
 using Maquinaria.Api.Empresas;
 using Maquinaria.Api.Errores;
 using Maquinaria.Api.Plataforma;
@@ -211,7 +210,6 @@ app.MapearPlanes();
 app.MapearSaludEsquemas();
 app.MapearAccesoEmpresa();
 app.MapearSesionEmpresa();
-app.MapearEsquema();
 
 await app.SembrarSuperadminAsync();
 

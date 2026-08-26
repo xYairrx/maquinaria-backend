@@ -90,12 +90,6 @@ public static class RegistroInfraestructura
         servicios.AddScoped<ISembradorAdministrador, SembradorAdministradorEf>();
         servicios.AddScoped<AprovisionarEmpresa>();
 
-        // Migrar N bases y reportar quien quedo atras. El comando de linea de comandos
-        // resuelve MigrarEmpresas de este mismo contenedor: no hay un segundo registro
-        // para el camino sin peticion.
-        servicios.AddScoped<MigrarEmpresas>();
-        servicios.AddScoped<SaludEsquemas>();
-
         // ------------------------------------------------------------------
         // Acceso de usuarios de empresa
         // ------------------------------------------------------------------

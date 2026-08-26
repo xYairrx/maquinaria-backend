@@ -29,6 +29,45 @@ internal static class EndpointsSaludEsquemas
         return rutas;
     }
 
-    private static async Task<IResult> EsquemasAsync(SaludEsquemas caso, CancellationToken ct)
-        => Results.Ok(await caso.EjecutarAsync(ct));
+    /// <summary>
+    /// La FORMA DE LA RESPUESTA ES CONTRATO: el frontend ya la consume en dos pantallas,
+    /// asi que ningun nombre de campo se toca. Por eso hay una proyeccion en lugar de
+    /// devolver lo que da el migrador tal cual.
+    ///
+    /// El migrador ya entrega la version disponible aparte de la lista, asi que aqui no se
+    /// deduce de ninguna fila: un sistema sin empresas sigue reportando a que version lleva
+    /// este binario.
+    /// </summary>
+    private static async Task<IResult> EsquemasAsync(
+        IMigradorEmpresas migrador, CancellationToken ct)
+    {
+        // Lee el historial de CADA BASE, no la copia de tenant.version_esquema: ese campo
+        // puede haber quedado atras si alguien aplico migraciones por fuera, y este
+        // endpoint existe justo para encontrar ese desajuste.
+        var reporte = await migrador.RevisarAsync(ct);
+
+        var empresas = reporte.Empresas
+            .Select(e => new EstadoEsquemaEmpresa(
+                e.Id,
+                e.Slug,
+                e.RazonSocial,
+                e.Estado,
+                e.Aprovisionamiento,
+                e.VersionAplicada,
+                e.MigracionesPendientes,
+                e.Desfasada,
+                e.VersionReconocida))
+            .ToList();
+
+        return Results.Ok(new ReporteSaludEsquemas(
+            // Nula solo si el ensamblado no trae migraciones. El frontend ya la tipa como
+            // nulo posible.
+            reporte.VersionDisponible,
+            empresas.Count,
+
+            // El conteo va calculado y no lo saca la pantalla recorriendo la lista: es el
+            // numero que decide si se muestra la alerta.
+            empresas.Count(e => e.Desfasada),
+            empresas));
+    }
 }

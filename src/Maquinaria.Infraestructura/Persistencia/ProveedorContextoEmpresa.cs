@@ -30,15 +30,6 @@ public sealed class ProveedorContextoEmpresa(FabricaConexionesEmpresa fabrica)
     }
 
     /// <summary>
-    /// Un contexto para PREGUNTARLE AL ENSAMBLADO que migraciones trae el codigo, sin
-    /// conectarse a nada: <c>Database.GetMigrations()</c> no toca la base.
-    ///
-    /// Apunta a la plantilla porque construir el contexto exige una cadena y esa es la
-    /// base inofensiva por definicion —existe justo para que un comando distraido no
-    /// pueda hacer dano—. Si algun dia alguien le agrega una consulta a este contexto, va
-    /// a dar contra maquinaria_plantilla y se va a notar.
-    /// </summary>
-    public ContextoEmpresa ParaLeerMigraciones() => ParaMigrar(fabrica.Prefijo + "plantilla");
     /// Un contexto solo para preguntarle al ENSAMBLADO que migraciones existen.
     ///
     /// GetMigrations() lee el ensamblado, no la base, asi que esto NO abre conexion.

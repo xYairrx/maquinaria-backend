@@ -26,35 +26,21 @@ public interface IRegistroTenants
     Task MarcarListaAsync(Guid tenantId, string versionEsquema, CancellationToken ct);
 
     /// <summary>
-    /// Escribe SOLO version_esquema. Lo usa migrar-empresas, que no debe tocar
-    /// estado_aprovisionamiento: una empresa en Fallida por un correo que no salio sigue
-    /// estando en Fallida despues de migrarla, y marcarla Lista aqui esconderia el
-    /// problema.
-    /// </summary>
-    Task ActualizarVersionEsquemaAsync(
-        Guid tenantId, string versionEsquema, CancellationToken ct);
-
-    /// <summary>
-    /// Las empresas vivas con su base y su version de esquema. La usan migrar-empresas y
-    /// el endpoint de salud de esquemas.
-    ///
-    /// EXCLUYE las dadas de baja logica, al contrario que <see cref="ListarAsync"/>: no
-    /// hay que migrar la base de una empresa que ya no opera, y como el historial es
-    /// append-only, si algun dia vuelve, alcanza.
-    /// </summary>
-    Task<IReadOnlyList<EmpresaConEsquema>> ListarConEsquemaAsync(CancellationToken ct);
-
-    /// <summary>
     /// Todas las empresas, para el panel. Incluye las dadas de baja: su historial y su
     /// base siguen existiendo, y esconderlas del panel solo dificultaria auditarlas.
     /// </summary>
     Task<IReadOnlyList<ResumenEmpresa>> ListarAsync(CancellationToken ct);
 
     /// <summary>
-    /// Las empresas que el migrador tiene que recorrer, con su nombre_bd.
+    /// Las empresas que el migrador tiene que recorrer, con su nombre_bd. La usan
+    /// migrar-empresas y el endpoint de salud de esquemas, que revisa sin tocar.
     ///
     /// Separado de ListarAsync a proposito: ese devuelve un resumen para el panel y NO
     /// lleva nombre_bd, porque ese dato no tiene por que salir del servidor.
+    ///
+    /// EXCLUYE las dadas de baja logica, al contrario que <see cref="ListarAsync"/>: no
+    /// hay que migrar la base de una empresa que ya no opera, y como el historial es
+    /// append-only, si algun dia vuelve, alcanza.
     /// </summary>
     Task<IReadOnlyList<TenantParaMigrar>> ListarParaMigrarAsync(
         string? slug, CancellationToken ct);

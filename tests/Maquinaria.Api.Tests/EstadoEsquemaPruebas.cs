@@ -137,13 +137,15 @@ public class EstadoEsquemaPruebas
         // OMITIDA no cuenta para el codigo de salida: un alta que nunca creo su base no
         // debe hacer fallar el comando en cada corrida.
         var reporte = new ReporteMigracion(
-            Disponibles[^1],
-            [
-                new ResultadoMigracionEmpresa("bajio", Disponibles[3], Disponibles[4], EstadoMigracion.Migrada, null),
-                new ResultadoMigracionEmpresa("nueva", null, null, EstadoMigracion.Omitida, "Su base no existe."),
-            ]);
+        [
+            new ResultadoEmpresa("bajio", DesenlaceMigracion.Migrada, Disponibles[4], "1 migraciones"),
+            new ResultadoEmpresa("nueva", DesenlaceMigracion.Omitida, null, "Su base no existe."),
+            new ResultadoEmpresa("centro", DesenlaceMigracion.AlDia, Disponibles[4], null),
+        ]);
 
-        Assert.False(reporte.HayFallas);
+        Assert.False(reporte.HuboFallas);
+        Assert.Equal(3, reporte.Total);
+        Assert.Equal(1, reporte.AlDia);
         Assert.Equal(1, reporte.Migradas);
         Assert.Equal(1, reporte.Omitidas);
         Assert.Equal(0, reporte.Fallidas);
@@ -153,13 +155,12 @@ public class EstadoEsquemaPruebas
     public void Una_empresa_fallida_hace_fallar_el_comando()
     {
         var reporte = new ReporteMigracion(
-            Disponibles[^1],
-            [
-                new ResultadoMigracionEmpresa("bajio", Disponibles[3], Disponibles[4], EstadoMigracion.Migrada, null),
-                new ResultadoMigracionEmpresa("demo", Disponibles[3], null, EstadoMigracion.Fallida, "timeout"),
-            ]);
+        [
+            new ResultadoEmpresa("bajio", DesenlaceMigracion.Migrada, Disponibles[4], null),
+            new ResultadoEmpresa("demo", DesenlaceMigracion.Fallida, null, "timeout"),
+        ]);
 
-        Assert.True(reporte.HayFallas);
+        Assert.True(reporte.HuboFallas);
         Assert.Equal(1, reporte.Fallidas);
     }
 }

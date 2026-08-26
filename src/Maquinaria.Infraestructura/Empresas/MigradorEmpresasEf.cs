@@ -106,18 +106,24 @@ internal sealed class MigradorEmpresasEf(
             $"{pendientes.Count} migraciones");
     }
 
-    public async Task<IReadOnlyList<EstadoEsquema>> RevisarAsync(CancellationToken ct)
+    public async Task<ReporteEsquemas> RevisarAsync(CancellationToken ct)
     {
         var empresas = await registro.ListarParaMigrarAsync(null, ct);
         var estados = new List<EstadoEsquema>(empresas.Count);
 
-        // La ultima migracion que trae el ENSAMBLADO: es la version a la que todas
-        // deberian llegar.
-        string esperada;
+        // LA LISTA COMPLETA de migraciones del ensamblado, y EN EL ORDEN QUE DA EF. Ese
+        // orden es el que manda y aqui no se reordena: el orden de aplicacion es el del
+        // historial, no el de una comparacion de cadenas.
+        //
+        // Entera y no solo la ultima porque con la ultima no se puede contar cuantas le
+        // faltan a una empresa, ni distinguir "atrasada" de "tiene aplicada una migracion
+        // que este binario no conoce" — que es el caso de una base POR DELANTE del codigo
+        // desplegado, y es el peligroso.
+        List<string> disponibles;
 
         await using (var referencia = proveedor.ParaLeerMigraciones())
         {
-            esperada = referencia.Database.GetMigrations().Last();
+            disponibles = referencia.Database.GetMigrations().ToList();
         }
 
         foreach (var empresa in empresas)
@@ -137,14 +143,24 @@ internal sealed class MigradorEmpresasEf(
                 log.LogWarning(e, "No se pudo leer el esquema de {Slug}.", empresa.Slug);
             }
 
+            // La comparacion vive en Aplicacion y es PURA: es la unica logica no trivial
+            // de todo el bloque de migraciones y asi se prueba sin Neon.
+            var comparacion = ComparadorEsquema.Comparar(aplicada, disponibles);
+
             estados.Add(new EstadoEsquema(
+                empresa.Id,
                 empresa.Slug,
-                aplicada,
-                esperada,
-                aplicada == esperada,
-                empresa.Aprovisionamiento));
+                empresa.RazonSocial,
+                empresa.Estado,
+                empresa.Aprovisionamiento,
+                comparacion.VersionAplicada,
+                comparacion.MigracionesPendientes,
+                comparacion.Desfasada,
+                comparacion.VersionReconocida));
         }
 
-        return estados;
+        // La version disponible sale de la LISTA y no de la primera empresa: sin empresas
+        // el reporte tiene que seguir diciendo a que version lleva este binario.
+        return new ReporteEsquemas(disponibles.Count > 0 ? disponibles[^1] : null, estados);
     }
 }

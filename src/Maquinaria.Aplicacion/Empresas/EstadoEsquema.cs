@@ -3,24 +3,6 @@
 namespace Maquinaria.Aplicacion.Empresas;
 
 /// <summary>
-/// Una empresa con lo justo para migrarla: su base y la version que la central dice
-/// que tiene aplicada.
-///
-/// LLEVA nombre_bd, a diferencia de <see cref="ResumenEmpresa"/>, porque el comando
-/// migrar-empresas necesita a que base conectarse. Por eso este tipo NO se devuelve
-/// nunca por HTTP: el endpoint de salud lo proyecta a
-/// <see cref="EstadoEsquemaEmpresa"/>, que no lo lleva.
-/// </summary>
-public sealed record EmpresaConEsquema(
-    Guid Id,
-    string Slug,
-    string RazonSocial,
-    string NombreBd,
-    EstadoTenant Estado,
-    EstadoAprovisionamiento Aprovisionamiento,
-    string? VersionEsquema);
-
-/// <summary>
 /// El resultado de comparar lo que una base tiene aplicado contra lo que el codigo trae.
 /// </summary>
 /// <param name="VersionDisponible">

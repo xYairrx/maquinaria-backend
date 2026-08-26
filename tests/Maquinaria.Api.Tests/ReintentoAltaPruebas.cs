@@ -1,4 +1,4 @@
-using Maquinaria.Aplicacion.Correo;
+﻿using Maquinaria.Aplicacion.Correo;
 using Maquinaria.Aplicacion.Empresas;
 using Maquinaria.Dominio.Plataforma;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -273,11 +273,12 @@ public class ReintentoAltaPruebas
             => throw new NotSupportedException();
 
         // ---- lo que usa migrar-empresas, no el reintento ----
-        public Task ActualizarVersionEsquemaAsync(
-            Guid tenantId, string versionEsquema, CancellationToken ct)
+        public Task<IReadOnlyList<TenantParaMigrar>> ListarParaMigrarAsync(
+            string? slug, CancellationToken ct)
             => throw new NotSupportedException();
 
-        public Task<IReadOnlyList<EmpresaConEsquema>> ListarConEsquemaAsync(CancellationToken ct)
+        public Task MarcarVersionEsquemaAsync(
+            Guid tenantId, string version, CancellationToken ct)
             => throw new NotSupportedException();
 
         public bool EsColisionDeUnicidad(Exception e) => false;

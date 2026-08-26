@@ -435,7 +435,15 @@ imprime el reporte y termina; no abre ningún puerto.
 
 ```powershell
 dotnet run --project src\Maquinaria.Api -- migrar-empresas
+dotnet run --project src\Maquinaria.Api -- migrar-empresas --slug=bajio
+dotnet run --project src\Maquinaria.Api -- migrar-empresas --detalle
 ```
+
+**Acepta dos argumentos, y sólo dos.** `--slug=<slug>` migra **sólo esa empresa**, y es lo que
+se quiere cuando una quedó atrás y no hay razón para volver a recorrer las que ya están al día.
+`--detalle` vuelca la pila cuando algo truena; sin él el comando imprime un mensaje de una línea
+y la pista de dónde mirar, que es lo que hace falta casi siempre. **No hay *dry-run*:** no hay
+forma de preguntarle qué aplicaría sin que lo aplique.
 
 **Si hay un proceso de `Maquinaria.Api` vivo, esto falla en el build** —no en la migración—
 porque el proceso tiene tomadas las DLL. Es la trampa conocida de las dos instancias. Salida:
@@ -459,23 +467,38 @@ nada nuevo que poner.
 
 ### Cómo se lee el reporte
 
-Una línea por empresa, con la etiqueta del desenlace y el salto de versión
-`versiónAntes -> versiónDespués`. La versión «antes» **se lee de la
-`__EFMigrationsHistory` de cada base**, no de la central, así que el salto que imprime es el
-real incluso si la central estaba desincronizada.
+Una tabla con **una línea por empresa** —`EMPRESA · RESULTADO · DETALLE`—, un recuento al pie y,
+si algo falló, un aviso de cierre:
 
-| etiqueta | qué pasó |
+```
+  EMPRESA                   RESULTADO   DETALLE
+  ------------------------  ----------  --------------------
+  bajio                     MIGRADA     1 migraciones
+  demo                      al dia
+  norte                     omitida     Aprovisionamiento Fallida
+
+  3 empresas: 1 al dia, 1 migradas, 1 omitidas, 0 fallidas.
+```
+
+| resultado | qué pasó |
 |---|---|
-| `OK (migrada)` | se aplicó lo que faltaba |
-| `OK (sin cambios)` | ya estaba al día. Migrar es idempotente |
-| `OMITIDA` | **no existe su base de datos.** Lo que hay que reintentar es el aprovisionamiento, no la migración. No cuenta para el código de salida |
-| `FALLO` | tronó, con el motivo debajo. **Las demás empresas sí se migraron** |
+| `MIGRADA` | se aplicó lo que faltaba, y el detalle dice cuántas migraciones |
+| `al dia` | ya estaba en la última. Migrar es idempotente, así que no se tocó |
+| `omitida` | **su aprovisionamiento no está `Lista`.** Lo que hay que reintentar es el alta, no la migración. No cuenta para el código de salida |
+| `FALLIDA` | tronó, con el motivo en el detalle. **Las demás empresas sí se migraron** |
+
+Las mayúsculas de `MIGRADA` y `FALLIDA` son a propósito: son los dos resultados que cambian algo
+o piden algo, y tienen que saltar de un reporte de veinte líneas.
+
+La versión que el comando registra en `tenant.version_esquema` **se lee de la
+`__EFMigrationsHistory` de cada base**, no de la central. La base es la verdad y el campo de la
+central es una copia, así que el comando además **corrige** ese campo si estaba desincronizado.
 
 El comando **no toca `estado_aprovisionamiento`**: una empresa en `Fallida` sigue en `Fallida`
 después de migrarla. Migrar no es dar de alta, y pisar ese estado esconderría un problema
 detrás del arreglo de otro.
 
-Cuando hubo fallos, el reporte termina con una línea `QUEDARON ATRAS: <slugs>`, repetida a
+Cuando hubo fallos, el reporte termina con una línea `HAY EMPRESAS SIN MIGRAR`, repetida a
 propósito: con veinte empresas la línea del fallo se sale de la pantalla.
 
 ### Códigos de salida, para un script de despliegue
@@ -483,7 +506,7 @@ propósito: con veinte empresas la línea del fallo se sale de la pantalla.
 | código | significa | qué hacer |
 |---|---|---|
 | `0` | todas al día | nada |
-| `1` | al menos una falló; **las demás sí se migraron** | ver el motivo de las que salen en `QUEDARON ATRAS`, arreglar y volver a correr — es seguro repetirlo |
+| `1` | al menos una falló; **las demás sí se migraron** | ver el motivo en la columna `DETALLE` de las que salen `FALLIDA`, arreglar y volver a correr — es seguro repetirlo |
 | `2` | no se pudo ni empezar (la base central no responde) | revisar la cadena y el estado de Neon. **Ninguna base se tocó** |
 
 Volver a correrlo siempre es seguro: `Migrate()` es idempotente y solo aplica lo que falta.
@@ -494,14 +517,19 @@ Volver a correrlo siempre es seguro: `Migrate()` es idempotente y solo aplica lo
 GET /api/plataforma/salud/esquemas
 ```
 
-Bearer de plataforma. Da la versión disponible en el código, cuántas empresas quedaron
-desfasadas y el detalle por empresa. Ojo con un detalle que importa al interpretarlo: **lee
-`tenant.version_esquema` de la base central, no se conecta a las bases de las empresas**. Si
-alguien aplicó una migración a mano sin actualizar la central, el reporte miente hasta la
-siguiente corrida de `migrar-empresas` — que es justamente la que lo corrige, porque el
-comando lee la versión real de cada base.
+Bearer de plataforma. Da la versión disponible en el código —una sola vez, porque es la del
+binario que responde y es la misma para todas—, cuántas empresas quedaron desfasadas y el
+detalle por empresa.
 
-Y `versionReconocida: false` no significa «al día»: significa **no se pudo comparar**, sea
-porque no hay versión registrada o porque la base tiene una migración que este binario no
-conoce, o sea una base **por delante** del código desplegado. El razonamiento completo está en
+**Se conecta a la base de cada empresa** y le lee su `__EFMigrationsHistory`, en lugar de creerle
+a la copia de `tenant.version_esquema`. Por eso detecta a quien aplicó una migración a mano por
+fuera, que es justo lo que una copia guardada en la central no puede ver. La contrapartida, que
+conviene tener presente: son **N conexiones dentro de una petición HTTP**, secuenciales, y
+crecen con el número de clientes.
+
+Y `versionReconocida: false` no significa «al día»: significa **no se pudo comparar**. Pasa
+cuando no hay versión registrada, cuando la base tiene una migración que este binario no conoce
+—o sea una base **por delante** del código desplegado— y también cuando **esa base no
+respondió**: el fallo se registra en el log y la empresa sale con este tercer estado en lugar de
+reventar el reporte completo. El razonamiento completo está en
 [la bitácora](guias/estado-y-pendientes.md#el-comando-migrar-empresas-y-la-salud-de-esquemas--2026-08-25).

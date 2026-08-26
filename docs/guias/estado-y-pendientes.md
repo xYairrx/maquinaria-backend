@@ -79,7 +79,7 @@ ya conocida. `dotnet test` deja `Maquinaria.Api.Tests` en **205 pruebas, 0 fallo
   `POST /api/plataforma/empresas/{slug}/reintento`. Corre el **mismo** código que el alta
   —los pasos 2 a 6 extraídos a `EjecutarSecuenciaAsync`—, no una copia
 - [ ] Comando `migrar-empresas` + endpoint de salud que reporte quién quedó atrasado
-- [x] Comando **`migrar-empresas`** con reporte por empresa, y **`GET /api/plataforma/esquema`** que dice quién quedó atrasado. Ver [`06-alcance-fase1.md`](../06-alcance-fase1.md) §8
+- [x] Comando **`migrar-empresas`** con reporte por empresa, y **`GET /api/plataforma/salud/esquemas`** que dice quién quedó atrasado. Ver [`06-alcance-fase1.md`](../06-alcance-fase1.md) §8
 - [x] Diagnosticado el estado real de las cuatro bases (ver la nota de abajo)
 - [x] **Las 28 tablas de Fase 1 estan en las tres bases** (38 con las 10 de Fase 0), 7 migraciones, huella comun `b4f101c3…`, y **30 de 30 pruebas de garantias en verde** contra la base real
 - [ ] Endpoint para **reintentar** un alta en `Fallida`. La secuencia ya es idempotente; falta el disparador
@@ -614,43 +614,12 @@ existen. **Se recrea, no se migra.** Es una base desechable: el aprovisionamient
 como plantilla de `CREATE DATABASE` —crea la base vacia y corre migraciones—, asi que
 soltarla no afecta a ningun cliente.
 
-### `migrar-empresas` y dos defectos propios — 2026-08-25 (noche)
+### `migrar-empresas`: los defectos que salieron al correrlo — 2026-08-25 (noche)
 
-Dos cosas que solo se vieron al correrlo de verdad:
-
-**`RevisarAsync` nombraba `maquinaria_plantilla`** para construir un contexto y preguntarle
-al ensamblado que migraciones existen. `GetMigrations()` lee el ENSAMBLADO, no la base, asi
-que la conexion nunca se abria — pero ataba la revision de esquema a que una base
-desechable siguiera existiendo. Ahora hay `ParaLeerMigraciones()`, que no nombra ninguna.
-
-**El comando volcaba la pila** justo debajo del mensaje limpio, deshaciendo el trabajo de
-tenerlo limpio. En un comando de consola la consola ES el log: la pila se pide con
-`--detalle`.
-
-El comando existe y llega hasta la base; lo único que lo detiene es la credencial. Diseño
-en [`06-alcance-fase1.md`](../06-alcance-fase1.md) §8.
-
-**Un defecto que salió al primer intento de correrlo.** El comando no arrancaba:
-
-```
-Correo:Proveedor es 'resend' pero falta Resend:Llave. Va en secretos.
-```
-
-Era mi propia comprobación de arranque haciendo su trabajo en el lugar equivocado.
-Validaba **al registrar los servicios**, así que `migrar-empresas` —un comando que no manda
-ni un correo— no podía arrancar sin configurar el proveedor de correo.
-
-**Registrar servicios no debe validar lo que ese arranque en concreto no va a usar.** La
-validación se movió al constructor de `CorreoResend`, que se construye la primera vez que
-alguien intenta enviar: el fallo sigue siendo temprano y claro, y cada camino solo exige lo
-que necesita. Al registrar queda un aviso en `stderr` para no perder la señal.
-
-Es la segunda vez que un "fallo rápido" bien intencionado bloquea un camino que no le
-correspondía. La regla que queda: **el arranque valida lo que ese arranque usa.**
-
-**Y el comando fallaba con un volcado de pila** cuando no podía leer la lista de empresas
-—el `try` estaba dentro del bucle por empresa, y eso pasa antes—. Ahora da un mensaje de
-una línea, la pista de dónde mirar, y código de salida `2`.
+Se corrió por primera vez contra una base real y salieron tres defectos. Van con el resto del
+relato del comando —que se construyó dos veces en paralelo y se fusionó el 2026-08-26— en [una
+sola sección](#el-comando-migrar-empresas-y-la-salud-de-esquemas--2026-08-25), para no contarlo
+a trozos.
 
 ### Fase 1 desbloqueada, y tres garantías más en el motor — 2026-08-25
 
@@ -782,6 +751,21 @@ para eso— pero **nada de esto está aplicado ni probado contra la base real**,
 ha verificado todo lo demás en este proyecto. Queda pendiente en cuanto vuelva la cadena.
 
 ### Fase 1, bloque A: catálogos, ubicación y trabajadores — 2026-08-24
+
+> **Superada, y se deja por el rastro. Al 2026-08-26:** esta entrada vale para el 2026-08-24 y
+> hoy queda muy corta. En disco hay **28 tablas de Fase 1** en tres migraciones
+> —`EmpresaCatalogosFase1` (10 tablas), `EmpresaOperacionFase1` (18) y
+> `EmpresaValoresPorDefectoRenglones` (los `DEFAULT` que faltaban)—, `sucursal` desapareció como
+> entidad, y estas nueve tablas terminaron dentro de `EmpresaCatalogosFase1`, que se regeneró
+> tres veces antes de quedarse. Lo que pasó está contado por quien lo diseñó en
+> [las 28 tablas de Fase 1](#las-28-tablas-de-fase-1-y-dos-cosas-que-solo-salieron-al-probarlas--2026-08-25-noche)
+> y en [Fase 1 desbloqueada](#fase-1-desbloqueada-y-tres-garantías-más-en-el-motor--2026-08-25).
+>
+> Lo que sigue **pendiente de quien lo diseñó** es el porqué entidad por entidad de las 18
+> tablas de operación —`Equipo`, `Cotizacion`, `Renta`, `Contrato`, `Cliente`, `Tarifa`,
+> `OrdenVenta`, `OrdenCompra` y las que las acompañan—: la lista está y el esquema está
+> verificado, pero el razonamiento de cada decisión no se escribe de segunda mano. Un documento
+> que explica con seguridad una decisión que no tomó es peor que uno que falta.
 
 Nueve tablas aplicadas a `maquinaria_plantilla`, que pasa de 10 a 19:
 
@@ -1241,24 +1225,53 @@ alimentado por `GET /planes` filtrando por activos.
 ## El comando `migrar-empresas` y la salud de esquemas — 2026-08-25
 
 El paso 10 del plan de arranque, y el que llevaba más tiempo siendo el más urgente: las
-migraciones de `ContextoEmpresa` se aplican **N veces, una por base**, y hasta hoy no había
-nada que las aplicara en bloque ni nada que dijera quién se había quedado atrás.
+migraciones de `ContextoEmpresa` se aplican **N veces, una por base**, y hasta ese día no
+había nada que las aplicara en bloque ni nada que dijera quién se había quedado atrás.
 
 Cómo se corre está en [puesta en marcha](../00-puesta-en-marcha.md#9-el-comando-migrar-empresas);
 aquí van las decisiones.
 
-**Es un argumento de `Maquinaria.Api`, no un proyecto de consola nuevo.** El comando necesita
-exactamente la misma configuración que la API —las dos cadenas de conexión, que viven en los
-*user secrets* de ese proyecto— y el mismo contenedor de DI. Un proyecto aparte serían otro
-`.csproj`, otro juego de secretos y dos registros de infraestructura que pueden divergir, a
-cambio de nada. Se ejecuta en `Program.cs` **antes** de configurar el pipeline: corre,
-imprime y termina sin abrir ningún puerto.
+### Hubo dos implementaciones, y se fusionaron — 2026-08-26
+
+Esto se construyó **dos veces en paralelo**, y conviene que quede escrito porque el diff no lo
+va a explicar. El `git pull` del commit `e7aff40` traía su propia versión del comando y del
+endpoint; en esta rama ya existía otra. El merge fusionó los dos lados **sin conflicto**
+—archivos con nombres distintos haciendo lo mismo— así que durante un rato el repositorio tuvo
+dos motores, dos contratos y dos relatos en esta bitácora. El 2026-08-26 se dejó uno.
+
+Lo que quedó, y de dónde vino cada parte:
+
+| pieza | de dónde | por qué ganó |
+|---|---|---|
+| el motor, `MigradorEmpresasEf` | del lado que llegó en el `pull` | **abre cada base y le lee su `__EFMigrationsHistory`**. La otra versión leía `tenant.version_esquema` de la central, que es una copia |
+| el contrato, `IMigradorEmpresas` y sus tipos | del lado de esta rama | los **tres estados** del comparador, y la versión disponible **una sola vez** en el reporte |
+| `ComparadorEsquema`, puro y con sus 13 pruebas | del lado de esta rama | es la única lógica no trivial del bloque y así se prueba sin Neon. Ahora el motor lo llama |
+| la forma de la respuesta HTTP | del lado de esta rama | el frontend ya está empujado contra ella, así que **ningún nombre de campo se movió** |
+| los defectos de operación de más abajo | del lado que llegó en el `pull` | salieron de correrlo de verdad, y eso no se descubre leyendo código |
+
+Se borraron `MigrarEmpresas.cs`, `SaludEsquemas.cs`, la carpeta `Api/Comandos/` completa,
+`EndpointsEsquema.cs`, el tipo `EmpresaConEsquema` y los métodos
+`IRegistroTenants.ActualizarVersionEsquemaAsync` y `ListarConEsquemaAsync`. **Si un documento
+los nombra, está describiendo código que ya no existe.**
+
+La lección de la fusión, que es la parte reutilizable: **dos ramas que resuelven el mismo
+problema no producen un conflicto de merge si no tocan los mismos archivos.** Git avisa de las
+colisiones de texto, no de las de intención. Lo que destapó el duplicado fue que la solución
+compilaba con dos juegos de tipos casi homónimos, no que el merge se quejara.
+
+### Es un argumento de `Maquinaria.Api`, no un proyecto de consola nuevo
+
+El comando necesita exactamente la misma configuración que la API —las dos cadenas de
+conexión, que viven en los *user secrets* de ese proyecto— y el mismo contenedor de DI. Un
+proyecto aparte serían otro `.csproj`, otro juego de secretos y dos registros de
+infraestructura que pueden divergir, a cambio de nada. Se ejecuta en `Program.cs` **antes** de
+configurar el pipeline: corre, imprime y termina sin abrir ningún puerto.
 
 **Va por la cadena directa**, `ConnectionStrings:Migraciones`, vía
-`ProveedorContextoEmpresa.ParaMigrar`. Es la misma razón de siempre: el endpoint *pooled*
-corre PgBouncer en modo transacción y por ahí no pasa DDL. Que el comando use el mismo camino
-de código que el aprovisionamiento no es casualidad, es lo que evita tener dos formas de
-llegar a la base de una empresa.
+`ProveedorContextoEmpresa.ParaMigrar`. Es la misma razón de siempre: el endpoint *pooled* corre
+PgBouncer en modo transacción y por ahí no pasa DDL. Que el comando use el mismo camino de
+código que el aprovisionamiento no es casualidad, es lo que evita tener dos formas de llegar a
+la base de una empresa.
 
 **Resistente a fallos parciales, que es su razón de existir.** Que la empresa 23 truene no
 detiene a las que siguen, y no puede haber transacción que abarque varias bases porque son
@@ -1274,41 +1287,59 @@ Los códigos de salida son la interfaz con un script de despliegue, así que son
 | `1` | al menos una falló — **las demás sí se migraron** |
 | `2` | no se pudo ni empezar (típicamente, la central no responde) |
 
-El reporte imprime una línea por empresa con `slug · estado · versiónAntes -> versiónDespués`,
-y cuando hubo fallos **repite los slugs al final** en una línea `QUEDARON ATRAS: …`. Eso no
-es adorno: con veinte empresas la línea del fallo se sale de la pantalla, y un reporte que
-esconde el fallo entre el ruido es un reporte que nadie lee.
+El reporte es una tabla de `EMPRESA · RESULTADO · DETALLE` con **una línea por empresa**, un
+recuento al pie —`N empresas: a al dia, b migradas, c omitidas, d fallidas`— y, cuando hubo
+fallos, una línea `HAY EMPRESAS SIN MIGRAR`. Ese cierre no es adorno: con veinte empresas la
+línea del fallo se sale de la pantalla, y un reporte que esconde el fallo entre el ruido es un
+reporte que nadie lee.
 
-**La versión «antes» se lee de la base, no de la central.** Sale de la
-`__EFMigrationsHistory` de cada empresa. La base es la verdad; `tenant.version_esquema` es
-una copia, y si alguien aplicó una migración a mano esa copia está mal. Leyendo de la base, el
-comando además **corrige** la central en lugar de heredar su error.
+**La versión que registra sale de la base, no de la central.** El motor la lee de la
+`__EFMigrationsHistory` de cada empresa y sólo después escribe `tenant.version_esquema`, en ese
+orden. La base es la verdad; el campo de la central es una copia, y si alguien aplicó una
+migración a mano esa copia está mal. Leyendo de la base, el comando además **corrige** la
+central en lugar de heredar su error. Y si esa escritura fallara, el esquema quedaría bien y el
+dato mal — que es el fallo menos malo de los dos, y el que la revisión detecta.
 
 **No toca `estado_aprovisionamiento`.** Una empresa en `Fallida` sigue en `Fallida` después de
 migrarla. Es deliberado: `Fallida` significa «el alta no terminó» y migrar no es dar de alta,
-así que pisarlo esconderría un problema detrás del arreglo de otro. Las que no tienen base
-salen `OMITIDA` —con el motivo, que es *reintenta el aprovisionamiento, no la migración*— y
-**no cuentan** para el código de salida: si contaran, un tenant roto haría fallar el comando
-para siempre y el `0` dejaría de significar nada.
+así que pisarlo esconderría un problema detrás del arreglo de otro. Las que no tienen la base
+lista salen `omitida` —con el motivo, que es *reintenta el aprovisionamiento, no la
+migración*— y **no cuentan** para el código de salida: si contaran, un tenant roto haría
+fallar el comando para siempre y el `0` dejaría de significar nada.
+
+### Los dos argumentos que acepta
+
+`--slug=<slug>` migra **sólo esa empresa**. Es lo que se quiere cuando una quedó atrás y no hay
+razón para volver a recorrer las que ya están al día. El filtro vive dentro de
+`ListarParaMigrarAsync`, así que es el mismo camino de código con la lista más corta y no una
+segunda ruta que pueda divergir.
+
+`--detalle` vuelca la pila del fallo. Sin él el comando imprime un mensaje de una línea y la
+pista de dónde mirar, que es lo que hace falta casi siempre; con él, lo que hace falta el resto
+de las veces. Por qué es opcional está más abajo, en los defectos.
 
 ### `GET /api/plataforma/salud/esquemas`
 
 Policy de plataforma, `WithName("SaludDeEsquemas")`. Devuelve `versionDisponible` una sola vez
-—es la misma para todas, porque es la del binario que responde—, `totalEmpresas`,
-`desfasadas`, y por empresa `versionAplicada`, `migracionesPendientes`, `desfasada` y
-`versionReconocida`.
+—es la misma para todas, porque es la del binario que responde—, `totalEmpresas`, `desfasadas`,
+y por empresa `versionAplicada`, `migracionesPendientes`, `desfasada` y `versionReconocida`.
 
-**No lleva `nombre_bd`**, igual que `ResumenEmpresa`: el panel no necesita el nombre de la
-base de un cliente para nada. El tipo interno `EmpresaConEsquema` **sí** lo lleva, porque el
-comando necesita a qué base conectarse, y precisamente por eso ese tipo **nunca sale por
-HTTP** — el caso de uso lo proyecta a `EstadoEsquemaEmpresa` antes de devolverlo. La
-proyección no es ceremonia; es lo que deja el nombre de la base dentro del servidor.
+**La forma de la respuesta es contrato:** el frontend ya la consume en dos pantallas, así que
+la fusión de las dos implementaciones no movió ni un nombre de campo. Por eso el endpoint
+**proyecta** en lugar de devolver lo que da el migrador tal cual.
+
+**No lleva `nombre_bd`**, igual que `ResumenEmpresa`: el panel no necesita el nombre de la base
+de un cliente para nada. El tipo interno `TenantParaMigrar` **sí** lo lleva, porque el motor
+tiene que abrir esa base, y precisamente por eso ese tipo **nunca sale por HTTP** — el endpoint
+proyecta a `EstadoEsquemaEmpresa` antes de devolverlo. La proyección no es ceremonia; es lo que
+deja el nombre de la base dentro del servidor.
 
 ### La decisión que merece explicarse: tres estados, no dos
 
 `ComparadorEsquema.Comparar` es **pura** —no toca ninguna base ni construye ningún contexto— y
-por eso es la única lógica no trivial de todo el bloque que se prueba sin Neon: 15 casos en
-`EstadoEsquemaPruebas`.
+por eso es la única lógica no trivial de todo el bloque que se prueba sin Neon: 13 casos en
+`EstadoEsquemaPruebas`. El motor la llama una vez por empresa. Leer la base y decidir qué
+significa lo leído son dos trabajos distintos, y por eso viven en dos sitios distintos.
 
 Y reporta **tres** situaciones, no dos:
 
@@ -1318,54 +1349,116 @@ Y reporta **tres** situaciones, no dos:
 | desfasada, con `migracionesPendientes` | falta aplicar N, y se sabe cuántas |
 | `versionReconocida: false` | **no se pudo comparar** |
 
-El tercero es el que importa. `versionReconocida: false` ocurre con `version_esquema` nula
-—el alta no llegó a migrar, o la base se creó por fuera— y también cuando la versión aplicada
-es una migración que **este binario no conoce**, es decir una base **por delante** del código
-desplegado: un despliegue revertido, o una empresa migrada desde otra rama. Ahí no se inventa
-un número de pendientes, porque no hay ninguno honesto que dar.
+El tercero es el que importa. `versionReconocida: false` ocurre con versión nula —el alta no
+llegó a migrar, la base se creó por fuera, o no se pudo leer su historial— y también cuando la
+versión aplicada es una migración que **este binario no conoce**, es decir una base **por
+delante** del código desplegado: un despliegue revertido, o una empresa migrada desde otra
+rama. Ahí no se inventa un número de pendientes, porque no hay ninguno honesto que dar.
 
-Colapsar esto a un solo booleano `desfasada` es lo que uno escribe sin pensarlo, y esconde el
-caso peligroso detrás de un tranquilizador «está al día». Una base por delante del código es
-exactamente la situación en la que la API va a fallar con errores de columna inexistente, y es
-la que menos puede pasar desapercibida.
+Ese es exactamente el hueco que tenía la implementación que no sobrevivió: su estado era un
+booleano `AlDia`, y con un solo booleano una base **por delante** se reporta igual que una
+atrasada. Son problemas distintos con arreglos distintos, y el peligroso quedaba escondido
+detrás de un tranquilizador «está al día» — una base por delante del código es exactamente la
+situación en la que la API va a fallar con errores de columna inexistente, y es la que menos
+puede pasar desapercibida.
 
-### La limitación consciente, marcada en el código
+### La versión disponible se leía de la primera empresa
 
-`SaludEsquemas` **lee `version_esquema` de la central y no se conecta a las bases de las
-empresas**. Está marcado `ponytail:` en el propio archivo.
+Un hueco que abrió la propia fusión, y que vale escribir porque es del tipo que no falla nunca
+en las pruebas: la versión del binario se deducía de la fila de la **primera** empresa, así que
+un sistema **sin** empresas reportaba `null` aunque el ensamblado sí trajera migraciones. El
+reporte decía menos de lo que sabía, y justo en el estado en el que empieza todo despliegue
+nuevo.
 
-Consultar la `__EFMigrationsHistory` de N bases dentro de una petición HTTP son N conexiones y
-N puntos de falla, y el dato ya lo mantienen los **dos únicos** caminos que aplican
-migraciones: el aprovisionamiento y este comando. Consecuencia aceptada y escrita: si alguien
-migra a mano sin actualizar la central, **el reporte miente** hasta la siguiente corrida de
-`migrar-empresas`, que lo corrige. La simplificación se sostiene solo mientras esos dos
-caminos sigan siendo los únicos que escriben ese campo; el día que aparezca un tercero, esto
-hay que revisarlo.
+`RevisarAsync` devuelve ahora un `ReporteEsquemas` que lleva la versión **una vez arriba**, y
+`EstadoEsquema` perdió el `VersionEsperada` que repetía el mismo dato en cada fila. Repetir un
+dato N veces no sólo es ruido: invita a que alguien lea el de una fila y lo trate como si fuera
+de esa empresa.
 
-`ListarConEsquemaAsync` **excluye las empresas con baja lógica**, al contrario que
-`ListarAsync`: no hay que migrar la base de una empresa que ya no opera, y como el historial
-es *append-only*, si algún día vuelve, alcanza.
+### La contrapartida: N conexiones por petición
 
-### Fuera de alcance, dicho para que nadie lo busque
+El motor **abre la base de cada empresa** y le lee su `__EFMigrationsHistory`. Es lo que
+convierte al endpoint en algo que se puede creer —detecta a quien migró a mano por fuera, que
+es justo el caso que una copia guardada en la central no puede ver— y tiene un precio que hay
+que dejar escrito: son **N conexiones dentro de una petición HTTP**, secuenciales, y crecen con
+el número de clientes.
 
-No hay endpoint HTTP que dispare la migración —se corre desde la terminal—, es secuencial sin
-paralelismo, no hay `--solo <slug>` ni *dry-run*, y los logs de EF Core salen crudos a la
-consola. Todo eso es cómodo y ninguno hace falta con dos empresas; el paralelismo además
-querría pensarse dos veces contra un Postgres gestionado.
+**Una base que no responde no rompe el reporte.** El fallo se registra en el log y esa empresa
+sale con `versionReconocida: false`, o sea «no se pudo comparar»: el mismo tercer estado que ya
+existía para la versión desconocida, y por la misma razón — no hay nada honesto que decir sobre
+un esquema que no se pudo leer. Lo que **no** hay que hacer es leerlo como «al día».
+
+`ListarParaMigrarAsync` **excluye las empresas con baja lógica**, al contrario que
+`ListarAsync`: no hay que migrar la base de una empresa que ya no opera, y como el historial es
+*append-only*, si algún día vuelve, alcanza. Que la lista sea la misma para el comando y para
+el endpoint es a propósito: el panel muestra exactamente el conjunto sobre el que el comando va
+a actuar.
+
+### Los defectos que sólo salieron al correrlo de verdad
+
+**`RevisarAsync` nombraba `maquinaria_plantilla`** para construir un contexto y preguntarle al
+ensamblado qué migraciones existen. `GetMigrations()` lee el **ensamblado**, no la base, así que
+la conexión nunca se abría — pero ataba la revisión de esquema a que una base **desechable por
+diseño** siguiera existiendo. Ahora hay `ParaLeerMigraciones()`, que no nombra ninguna.
+
+**El comando volcaba la pila** justo debajo del mensaje limpio, deshaciendo el trabajo de
+tenerlo limpio; y el `try` estaba **dentro** del bucle por empresa, cuando el fallo típico —no
+poder leer la lista de empresas— pasa antes de entrar en él. Ahora el `try` envuelve la llamada
+completa, el fallo da un mensaje de una línea, la pista de dónde mirar y código de salida `2`, y
+la pila se pide aparte con `--detalle`. **En un comando de consola la consola ES el log**, y
+cincuenta líneas de pila encima del mensaje son cincuenta líneas que nadie lee.
+
+**Y uno de arranque, que el comando destapó sin ser suyo.** Al primer intento no arrancaba:
+
+```
+Correo:Proveedor es 'resend' pero falta Resend:Llave. Va en secretos.
+```
+
+Era una comprobación de arranque haciendo su trabajo en el lugar equivocado: validaba **al
+registrar los servicios**, así que `migrar-empresas` —un comando que no manda ni un correo— no
+podía correr sin configurar el proveedor de correo. La validación se movió al constructor de
+`CorreoResend`, que se construye la primera vez que alguien intenta enviar: el fallo sigue
+siendo temprano y claro, y cada camino sólo exige lo que necesita. Al registrar queda un aviso
+en `stderr` para no perder la señal.
+
+Es la segunda vez que un "fallo rápido" bien intencionado bloquea un camino que no le
+correspondía. La regla que queda: **el arranque valida lo que ese arranque usa.**
 
 ### Cómo se probó sin tocar Neon
 
 Con las dos cadenas apuntando a `127.0.0.1:1`: el binario **reconoció el argumento, no abrió
 ningún puerto y salió con `2`**, que es exactamente el camino de «no se pudo ni empezar». Eso
 verifica el cableado —argumento, ámbito de DI, códigos de salida— sin aplicar **ninguna
-migración a ninguna base real**. La corrida de verdad la hace el operador en su terminal, y
-mientras no la haga, [el desfase sigue ahí](#el-desfase-de-esquema-dejó-de-ser-teórico).
+migración a ninguna base real**. Apuntado a Neon llega hasta la base, y lo único que lo detiene
+es la credencial que no autentica.
+
+La corrida de verdad la hace el operador en su terminal, y mientras no la haga, [el desfase
+sigue ahí](#el-desfase-de-esquema-dejó-de-ser-teórico).
 
 **Trampa de operación heredada:** si hay un proceso de `Maquinaria.Api` vivo, el build se
 bloquea con la DLL tomada. O se mata el proceso, o se compila una vez y se corre con
 `--no-build`. Es la [trampa ya documentada](#trampa-de-operación-dos-instancias-de-la-api-a-la-vez),
 y con este comando se pisa más seguido, porque uno lo lanza sin cerrar la API que tenía
 levantada.
+
+### Dos roturas de pruebas que dejó el merge, y no venían del duplicado
+
+`EstadoEsquemaPruebas` tenía dos casos apoyados en tipos del archivo borrado; se **portaron** al
+reporte que sobrevive con su intención intacta —que `Omitida` no cuente para el código de salida
+y que una `Fallida` sí lo haga—, porque lo que había muerto era el tipo, no la prueba. Y el
+`RegistroFalso` de `ReintentoAltaPruebas` no implementaba dos métodos que `IRegistroTenants`
+exige ahora, `ListarParaMigrarAsync` y `MarcarVersionEsquemaAsync`. Un doble de prueba que
+implementa una interfaz **paga cada método que se le agregue**, y ese es el precio conocido de
+tener la interfaz en un solo sitio.
+
+### Fuera de alcance, dicho para que nadie lo busque
+
+No hay **endpoint HTTP que dispare la migración** —se corre desde la terminal, y un `POST` que
+aplique DDL a las bases de N clientes es algo que se piensa dos veces antes de exponerlo—, no
+hay ***dry-run*** que diga qué se aplicaría sin aplicarlo, es **secuencial sin paralelismo** y
+los logs de EF Core salen crudos a la consola. Todo eso es cómodo y ninguno hace falta con dos
+empresas; el paralelismo además querría pensarse dos veces contra un Postgres gestionado. Lo
+que sí existe, y por eso no está en esta lista, es el filtro por empresa: `--slug=<slug>`.
 
 ---
 

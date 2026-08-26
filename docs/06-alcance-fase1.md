@@ -445,12 +445,13 @@ Cuatro decisiones que lo hacen usable de verdad:
 ### El endpoint de salud
 
 ```
-GET /api/plataforma/esquema
+GET /api/plataforma/salud/esquemas
 ```
 
-Devuelve la versión de cada empresa, la esperada y cuántas están atrasadas. **Lee el
-historial de migraciones de cada base, no `tenant.version_esquema`** — ese campo es una
-copia y puede estar desactualizado; el historial de la base es la verdad.
+Devuelve la versión aplicada de cada empresa, cuántas están atrasadas y —una sola vez, porque
+es la del binario que responde— la versión disponible en el código. **Lee el historial de
+migraciones de cada base, no `tenant.version_esquema`** — ese campo es una copia y puede estar
+desactualizado; el historial de la base es la verdad.
 
 Sin esto el desfase es **invisible** hasta que algo truena: una base dos versiones atrás
 funciona bien hasta que alguien abre la pantalla que necesita la tabla nueva.

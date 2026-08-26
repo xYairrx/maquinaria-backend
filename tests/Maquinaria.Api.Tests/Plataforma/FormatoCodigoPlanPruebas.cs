@@ -1,4 +1,5 @@
 using Maquinaria.Aplicacion.Plataforma;
+using Maquinaria.Dominio.Plataforma;
 
 namespace Maquinaria.Api.Tests;
 

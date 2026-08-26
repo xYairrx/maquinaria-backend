@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace Maquinaria.Aplicacion.Plataforma;
+namespace Maquinaria.Dominio.Plataforma;
 
 /// <summary>
 /// El formato del codigo de un plan. Vive aparte para poder probarlo sin base de datos,

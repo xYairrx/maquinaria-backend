@@ -42,7 +42,21 @@ csharp_style_var_for_built_in_types = false:suggestion
 csharp_style_var_when_type_is_apparent = true:suggestion
 csharp_style_expression_bodied_methods = when_on_single_line:suggestion
 dotnet_style_prefer_collection_expression = true:suggestion
-dotnet_style_namespace_match_folder = true:suggestion
+
+# LAS CARPETAS SON TECNICAS Y LOS NAMESPACES SON POR MODULO, asi que no coinciden y no
+# deben coincidir. Decidido el 2026-08-26 con la estructura de la Fase 1:
+# Aplicacion/ObjetosDTO/Rentas/, Aplicacion/IServicios/Rentas/ y
+# Aplicacion/Procesos/Rentas/ son tres carpetas y UN namespace,
+# Maquinaria.Aplicacion.Rentas.
+#
+# La alternativa —un namespace por carpeta— obliga a cada consumidor a importar dos o
+# tres namespaces del mismo modulo, y con 26 modulos eso son cabeceras de veinte usings
+# en cada controlador. La carpeta dice QUE TIPO de archivo es; el namespace dice DE QUE
+# habla. Son dos preguntas distintas y cada una la contesta quien mejor puede.
+#
+# Con la regla en 'true' el IDE marcaria como sugerencia casi todos los archivos de
+# Aplicacion, y una sugerencia que hay que ignorar siempre entrena a ignorarlas todas.
+dotnet_style_namespace_match_folder = false:silent
 
 # Un miembro con el mismo nombre que su tipo. Tenant.EstadoAprovisionamiento lo
 # incumple a proposito, para que la columna se llame estado_aprovisionamiento sin

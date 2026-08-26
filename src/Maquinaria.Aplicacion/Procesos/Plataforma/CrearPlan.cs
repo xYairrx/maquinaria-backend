@@ -1,3 +1,4 @@
+using Maquinaria.Dominio.Plataforma;
 using Microsoft.Extensions.Logging;
 
 namespace Maquinaria.Aplicacion.Plataforma;

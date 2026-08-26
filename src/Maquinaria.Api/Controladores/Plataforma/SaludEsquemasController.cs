@@ -1,6 +1,9 @@
-﻿using Maquinaria.Aplicacion.Empresas;
+using Maquinaria.Aplicacion.Empresas;
+using Maquinaria.Api.Seguridad;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
-namespace Maquinaria.Api.Plataforma;
+namespace Maquinaria.Api.Controladores.Plataforma;
 
 /// <summary>
 /// Salud de esquemas: que version tiene cada empresa y quien quedo atrasado.
@@ -13,22 +16,12 @@ namespace Maquinaria.Api.Plataforma;
 /// Solo la plataforma, misma policy que el resto del panel de superadministracion: el
 /// estado de las bases de todos los clientes no es asunto de ningun cliente.
 /// </summary>
-internal static class EndpointsSaludEsquemas
+[ApiController]
+[Route("api/plataforma/salud")]
+[Tags("Plataforma")]
+[Authorize(PoliticasAutorizacion.Plataforma)]
+public sealed class SaludEsquemasController(IMigradorEmpresas migrador) : ControllerBase
 {
-    public static IEndpointRouteBuilder MapearSaludEsquemas(this IEndpointRouteBuilder rutas)
-    {
-        var grupo = rutas.MapGroup("/api/plataforma/salud")
-            .WithTags("Plataforma")
-            .RequireAuthorization(PoliticasAutorizacion.Plataforma);
-
-        grupo.MapGet("/esquemas", EsquemasAsync)
-            .WithName("SaludDeEsquemas")
-            .WithSummary("Version de esquema por empresa, y quien quedo atrasado.")
-            .Produces<ReporteSaludEsquemas>();
-
-        return rutas;
-    }
-
     /// <summary>
     /// La FORMA DE LA RESPUESTA ES CONTRATO: el frontend ya la consume en dos pantallas,
     /// asi que ningun nombre de campo se toca. Por eso hay una proyeccion en lugar de
@@ -38,8 +31,11 @@ internal static class EndpointsSaludEsquemas
     /// deduce de ninguna fila: un sistema sin empresas sigue reportando a que version lleva
     /// este binario.
     /// </summary>
-    private static async Task<IResult> EsquemasAsync(
-        IMigradorEmpresas migrador, CancellationToken ct)
+    [HttpGet("esquemas")]
+    [EndpointName("SaludDeEsquemas")]
+    [EndpointSummary("Version de esquema por empresa, y quien quedo atrasado.")]
+    [ProducesResponseType<ReporteSaludEsquemas>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> EsquemasAsync(CancellationToken ct)
     {
         // Lee el historial de CADA BASE, no la copia de tenant.version_esquema: ese campo
         // puede haber quedado atras si alguien aplico migraciones por fuera, y este
@@ -59,7 +55,7 @@ internal static class EndpointsSaludEsquemas
                 e.VersionReconocida))
             .ToList();
 
-        return Results.Ok(new ReporteSaludEsquemas(
+        return Ok(new ReporteSaludEsquemas(
             // Nula solo si el ensamblado no trae migraciones. El frontend ya la tipa como
             // nulo posible.
             reporte.VersionDisponible,

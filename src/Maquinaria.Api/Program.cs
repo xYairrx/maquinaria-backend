@@ -3,16 +3,25 @@ using System.Threading.RateLimiting;
 using Maquinaria.Api.Arranque;
 using Maquinaria.Api.Empresas;
 using Maquinaria.Api.Errores;
-using Maquinaria.Api.Plataforma;
 using Maquinaria.Api.Salud;
+using Maquinaria.Api.Seguridad;
+using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Infraestructura;
 using Maquinaria.Infraestructura.Seguridad;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Controladores MVC, no Minimal API. La razon de peso es la matriz de 108 permisos: con
+// [RequierePermiso("equipos.crear")] la exigencia se lee en la firma del metodo, mientras
+// que con Minimal API seria un IEndpointFilter que hay que recordar encadenar en cada uno
+// de los ~50 endpoints de la Fase 1, y el que se olvide queda abierto sin que nada lo
+// detecte. Decidido el 2026-08-26; ver docs/07-plan-fase1.md §2.
+builder.Services.AddControllers();
 
 // Documento OpenAPI nativo de .NET 10 (sin Swashbuckle). Se expone en /openapi/v1.json,
 // que es la fuente del cliente HTTP generado del frontend (npm run api:sync).
@@ -59,7 +68,7 @@ builder.Services.AddRateLimiter(opciones =>
 
     // El acceso de empresa se particiona por SLUG e IP. Poder hacerlo es la razon de
     // que el slug vaya en la ruta: aqui todavia no se ha leido el cuerpo.
-    opciones.AddPolicy(EndpointsEmpresa.PoliticaAcceso, contexto =>
+    opciones.AddPolicy(PoliticasLimitador.AccesoEmpresa, contexto =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: (contexto.Request.RouteValues["slug"]?.ToString() ?? "?")
                 + "|" + (contexto.Connection.RemoteIpAddress?.ToString() ?? "?"),
@@ -74,7 +83,7 @@ builder.Services.AddRateLimiter(opciones =>
     // no es un intento fallido contra nosotros, es un mensaje al buzon de un tercero y
     // un consumo de la cuota del proveedor. Cupo mas chico y ventana mas larga que
     // PoliticaAcceso, con la misma particion por slug e IP.
-    opciones.AddPolicy(EndpointsEmpresa.PoliticaRestablecimiento, contexto =>
+    opciones.AddPolicy(PoliticasLimitador.RestablecimientoEmpresa, contexto =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: (contexto.Request.RouteValues["slug"]?.ToString() ?? "?")
                 + "|" + (contexto.Connection.RemoteIpAddress?.ToString() ?? "?"),
@@ -85,7 +94,7 @@ builder.Services.AddRateLimiter(opciones =>
                 QueueLimit = 0,
             }));
 
-    opciones.AddPolicy(EndpointsPlataforma.PoliticaInicioSesion, contexto =>
+    opciones.AddPolicy(PoliticasLimitador.InicioSesionPlataforma, contexto =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: contexto.Connection.RemoteIpAddress?.ToString() ?? "desconocida",
             factory: _ => new FixedWindowRateLimiterOptions
@@ -141,13 +150,34 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorizationBuilder()
+var autorizacion = builder.Services.AddAuthorizationBuilder()
     .AddPolicy(PoliticasAutorizacion.Plataforma, politica => politica
         .RequireAuthenticatedUser()
         .RequireClaim(ProveedorTokensJwt.ClaimAmbito, ProveedorTokensJwt.AmbitoPlataforma))
     .AddPolicy(PoliticasAutorizacion.Empresa, politica => politica
         .RequireAuthenticatedUser()
         .RequireClaim(ProveedorTokensJwt.ClaimAmbito, ProveedorTokensJwt.AmbitoEmpresa));
+
+// UNA POLICY POR PERMISO, registradas en un bucle sobre las claves conocidas —modulos por
+// acciones—. Son unas ciento treinta y su costo es un diccionario en memoria.
+//
+// El bucle en lugar de un IAuthorizationPolicyProvider dinamico: con esto, un
+// [RequierePermiso("equipos.crearr")] revienta al llegar la peticion —«policy not found»—
+// mientras que el provider dinamico aceptaria la cadena y devolveria 403 para siempre, en
+// silencio, sobre un endpoint que nadie puede alcanzar.
+//
+// EL AMBITO VA DENTRO DE CADA POLICY, y no es redundante con el [Authorize(Empresa)] del
+// controlador: asi un token de plataforma no satisface un permiso de empresa aunque alguien
+// olvide poner la policy de ambito en la clase.
+foreach (var clave in ClavesPermiso.Todas)
+{
+    autorizacion.AddPolicy(clave, politica => politica
+        .RequireAuthenticatedUser()
+        .RequireClaim(ProveedorTokensJwt.ClaimAmbito, ProveedorTokensJwt.AmbitoEmpresa)
+        .AddRequirements(new RequisitoPermiso(clave)));
+}
+
+builder.Services.AddSingleton<IAuthorizationHandler, ManejadorPermiso>();
 
 var app = builder.Build();
 
@@ -204,25 +234,13 @@ app.UseAuthorization();
 
 app.MapHealthChecks("/salud");
 
-app.MapearPlataforma();
-app.MapearEmpresas();
-app.MapearPlanes();
-app.MapearSaludEsquemas();
-app.MapearAccesoEmpresa();
-app.MapearSesionEmpresa();
+// Los nueve controladores de Controladores/. Un archivo nuevo ahi se descubre solo: ya no
+// hay una lista de Mapear*() que haya que acordarse de ampliar —y de la que un endpoint
+// nuevo podia quedarse fuera sin que nada avisara—.
+app.MapControllers();
 
 await app.SembrarSuperadminAsync();
 
 app.Run();
 
 return 0;
-
-/// <summary>Nombres de las politicas de autorizacion, para no repetir cadenas.</summary>
-internal static class PoliticasAutorizacion
-{
-    /// <summary>Exige un token cuyo ambito sea la plataforma, no una empresa.</summary>
-    public const string Plataforma = "plataforma";
-
-    /// <summary>Exige un token de empresa. Un token de plataforma NO sirve aqui.</summary>
-    public const string Empresa = "empresa";
-}

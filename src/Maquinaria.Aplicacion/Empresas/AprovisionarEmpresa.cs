@@ -1,4 +1,5 @@
 ﻿using Maquinaria.Aplicacion.Correo;
+using Maquinaria.Dominio.Comun;
 using Maquinaria.Dominio.Plataforma;
 using Microsoft.Extensions.Logging;
 
@@ -52,6 +53,46 @@ public sealed class AprovisionarEmpresa(
                 $"El identificador '{slug}' esta reservado por la plataforma.");
         }
 
+        // El RFC y el telefono son OPCIONALES: vacio o nulo se guarda como nulo. Lo que
+        // no se acepta es basura donde deberia haber un dato. Sus columnas son text sin
+        // CHECK, asi que este es el unico sitio donde se puede rechazar; validarlo solo
+        // en el frontend es teatro porque cualquiera manda el POST directo.
+        //
+        // UN RECHAZO POR CAMPO, con la Explicacion de su formato: "los datos son
+        // invalidos" obliga a adivinar cual de los tres.
+        var rfc = string.IsNullOrWhiteSpace(alta.Rfc) ? null : FormatoRfc.Normalizar(alta.Rfc);
+
+        if (rfc is not null && !FormatoRfc.EsValido(rfc))
+        {
+            return ResultadoAlta.Rechazado(FormatoRfc.Explicacion);
+        }
+
+        // NORMALIZADO, o sea solo los digitos. Se valida y se guarda igual, asi que dos
+        // capturas del mismo telefono con distinto formato quedan como el mismo valor.
+        var telefono = string.IsNullOrWhiteSpace(alta.Telefono)
+            ? null
+            : FormatoTelefono.Normalizar(alta.Telefono);
+
+        if (telefono is not null && !FormatoTelefono.EsValido(telefono))
+        {
+            return ResultadoAlta.Rechazado(FormatoTelefono.Explicacion);
+        }
+
+        // El correo del administrador SI es obligatorio: es el unico buzon al que puede
+        // llegar la invitacion, y una direccion mal escrita deja una empresa aprovisionada
+        // a la que nadie puede entrar.
+        //
+        // El IsNullOrWhiteSpace va PRIMERO y no es redundante con EsValido: corta antes de
+        // que Normalizar toque un nulo, que es lo unico de este bloque que saldria como un
+        // 500 en lugar de como un 400.
+        if (string.IsNullOrWhiteSpace(alta.CorreoAdministrador)
+            || !FormatoCorreo.EsValido(alta.CorreoAdministrador))
+        {
+            return ResultadoAlta.Rechazado(FormatoCorreo.Explicacion);
+        }
+
+        var correoAdministrador = FormatoCorreo.Normalizar(alta.CorreoAdministrador);
+
         var nombreBd = NombreBdDesdeSlug(slug);
 
         if (await registro.ExisteSlugAsync(slug, ct))
@@ -67,14 +108,19 @@ public sealed class AprovisionarEmpresa(
         }
 
         // ---------- 1. tenant + suscripcion, juntos ----------
+        // Los textos libres se RECORTAN antes de guardar. `IsNullOrWhiteSpace` ya rechaza el
+        // campo que es solo espacios, pero no toca `"  Acme  "`: eso entraba a la base con
+        // los espacios y de ahi salia al correo de invitacion y a la tabla del panel, donde
+        // nadie los ve pero desalinean y hacen que dos razones sociales iguales no lo sean
+        // al comparar. Recortar no es reformatear: no cambia lo que alguien escribio.
         var tenant = new Tenant
         {
             Slug = slug,
             NombreBd = nombreBd,
-            RazonSocial = alta.RazonSocial,
-            NombreComercial = alta.NombreComercial,
-            Rfc = alta.Rfc,
-            Telefono = alta.Telefono,
+            RazonSocial = alta.RazonSocial.Trim(),
+            NombreComercial = alta.NombreComercial?.Trim(),
+            Rfc = rfc,
+            Telefono = telefono,
             CorreoContacto = alta.CorreoContacto,
             Estado = EstadoTenant.Prueba,
             EstadoAprovisionamiento = EstadoAprovisionamiento.Pendiente,
@@ -115,7 +161,7 @@ public sealed class AprovisionarEmpresa(
 
         return await EjecutarSecuenciaAsync(
             tenant.Id, slug, nombreBd, alta.RazonSocial,
-            alta.CorreoAdministrador, alta.NombreAdministrador, ct);
+            correoAdministrador, alta.NombreAdministrador.Trim(), ct);
     }
 
     /// <summary>
@@ -146,6 +192,16 @@ public sealed class AprovisionarEmpresa(
         {
             return ResultadoAlta.Rechazado(
                 "Correo y nombre del administrador son obligatorios.");
+        }
+
+        // MISMA validacion de formato que el alta, y por la misma razon: este correo es el
+        // que recibe la liga de invitacion. Un reintento con la direccion mal escrita vuelve
+        // a dejar la empresa en un estado del que nadie puede entrar.
+        var correoReintento = FormatoCorreo.Normalizar(reintento.CorreoAdministrador);
+
+        if (!FormatoCorreo.EsValido(correoReintento))
+        {
+            return ResultadoAlta.Rechazado(FormatoCorreo.Explicacion);
         }
 
         var tenant = await registro.BuscarPorSlugAsync(normalizado, ct);
@@ -189,7 +245,7 @@ public sealed class AprovisionarEmpresa(
 
         return await EjecutarSecuenciaAsync(
             tenant.Id, normalizado, nombreBd, tenant.RazonSocial,
-            reintento.CorreoAdministrador, reintento.NombreAdministrador, ct);
+            correoReintento, reintento.NombreAdministrador.Trim(), ct);
     }
 
     /// <summary>

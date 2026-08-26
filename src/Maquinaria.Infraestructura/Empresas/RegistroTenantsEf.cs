@@ -75,6 +75,7 @@ internal sealed class RegistroTenantsEf(ContextoCentral central) : IRegistroTena
                     .SelectMany(s => central.PlanModulos.Where(pm => pm.PlanId == s.PlanId))
                     .Count(),
 
+                t.InvitacionEnviada,
                 t.CreadoEn))
             .ToListAsync(ct);
 
@@ -100,6 +101,11 @@ internal sealed class RegistroTenantsEf(ContextoCentral central) : IRegistroTena
                 t.EstadoAprovisionamiento))
             .ToListAsync(ct);
     }
+
+    public Task MarcarInvitacionEnviadaAsync(Guid tenantId, bool enviada, CancellationToken ct)
+        => central.Tenants
+            .Where(t => t.Id == tenantId)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.InvitacionEnviada, enviada), ct);
 
     public async Task MarcarVersionEsquemaAsync(
         Guid tenantId, string version, CancellationToken ct)

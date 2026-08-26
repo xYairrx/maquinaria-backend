@@ -281,6 +281,9 @@ public class ReintentoAltaPruebas
             Guid tenantId, string version, CancellationToken ct)
             => throw new NotSupportedException();
 
+        public Task MarcarInvitacionEnviadaAsync(
+            Guid tenantId, bool enviada, CancellationToken ct) => Task.CompletedTask;
+
         public bool EsColisionDeUnicidad(Exception e) => false;
     }
 

@@ -46,6 +46,25 @@ public class Tenant
     public EstadoTenant Estado { get; set; } = EstadoTenant.Prueba;
 
     /// <summary>
+    /// Si la invitacion del primer administrador SALIO por correo.
+    ///
+    /// EXISTE PORQUE EL PANEL NO PODIA SABERLO. El alta contestaba si el correo habia salido
+    /// y ese dato moria en la respuesta HTTP: al recargar la pantalla, una empresa con la
+    /// invitacion sin enviar era indistinguible de una con la invitacion entregada, y no
+    /// habia desde donde reenviarla. Paso de verdad con una empresa real y un Resend en
+    /// sandbox que rechazo el envio con un 403.
+    ///
+    /// FALSO significa «no salio, O NO SE SABE». Las empresas creadas antes de esta columna
+    /// quedan en falso porque de verdad no se sabe, y eso es lo correcto: el panel ofrece
+    /// reenviar, que es inofensivo —el reenvio rechaza si el administrador ya activo su
+    /// cuenta— y es la unica salida si no salio.
+    ///
+    /// No es historial: solo dice como quedo el ultimo intento. Quien mando que y cuando es
+    /// trabajo de la bitacora de auditoria, no de esta columna.
+    /// </summary>
+    public bool InvitacionEnviada { get; set; }
+
+    /// <summary>
     /// SIN VALOR INICIAL A PROPOSITO. No es un olvido: C# no lo permite.
     ///
     /// Escribir "= EstadoAprovisionamiento.Pendiente" aqui NO compila, porque al

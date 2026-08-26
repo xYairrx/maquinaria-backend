@@ -22,4 +22,15 @@ public sealed record ResumenEmpresa(
     string? VersionEsquema,
     string? CodigoPlan,
     int Modulos,
+
+    /// <summary>
+    /// Si la invitacion del primer administrador salio por correo. FALSO significa «no salio
+    /// o no se sabe»: las empresas anteriores a esta columna quedan en falso porque de verdad
+    /// no se sabe, y el panel ofrece reenviar, que es la unica salida si no salio.
+    ///
+    /// Va en la LISTA y no solo en la respuesta del alta porque ahi moria: al recargar el
+    /// panel, una empresa sin invitacion entregada era indistinguible de una con ella, y no
+    /// habia desde donde reenviarla.
+    /// </summary>
+    bool InvitacionEnviada,
     DateTime CreadoEn);

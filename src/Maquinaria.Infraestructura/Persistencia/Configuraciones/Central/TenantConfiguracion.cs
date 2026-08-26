@@ -43,6 +43,12 @@ internal sealed class TenantConfiguracion : IEntityTypeConfiguration<Tenant>
         tenant.Property(t => t.Moneda)
             .HasDefaultValue("MXN");
 
+        // Falso por defecto, y eso resuelve las filas que ya existen: quedan en «no se sabe»,
+        // que es la verdad. Ponerlas en true daria por entregada una invitacion que nadie
+        // puede confirmar y esconderia el boton de reenviar justo donde hace falta.
+        tenant.Property(t => t.InvitacionEnviada)
+            .HasDefaultValue(false);
+
         tenant.Property(t => t.CreadoEn)
             .HasDefaultValueSql("now()");
 

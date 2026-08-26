@@ -302,9 +302,19 @@ public sealed class AprovisionarEmpresa(
             {
                 log.LogError(
                     "Empresa {Slug} aprovisionada pero la invitacion NO se envio: {Motivo}. "
-                    + "Hay que reenviarla.",
+                    + "Hay que reenviarla desde el panel.",
                     slug, envio.Detalle);
             }
+
+            // COMO QUEDO EL ENVIO, guardado. Se escribe en los dos casos: registrar solo los
+            // exitos dejaria el fallo indistinguible de «todavia no se intento», y el panel
+            // volveria a no poder ofrecer el reenvio, que es de donde venimos.
+            //
+            // Va DENTRO del try y despues del envio, asi que si esto fallara el alta se
+            // marcaria Fallida con la base ya creada. Es el mismo trato que el resto de la
+            // secuencia y es el correcto aqui: sin este dato el panel no puede reenviar, asi
+            // que un alta que no lo guardo es un alta a medias.
+            await registro.MarcarInvitacionEnviadaAsync(tenantId, envio.Enviado, ct);
 
             return ResultadoAlta.Exito(new EmpresaAprovisionada(
                 tenantId, slug, nombreBd, version, envio.Enviado,

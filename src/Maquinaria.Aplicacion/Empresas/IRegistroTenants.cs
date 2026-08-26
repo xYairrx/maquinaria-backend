@@ -52,6 +52,15 @@ public interface IRegistroTenants
     /// </summary>
     Task MarcarVersionEsquemaAsync(Guid tenantId, string version, CancellationToken ct);
 
+    /// <summary>
+    /// Deja registrado como quedo el ultimo intento de mandar la invitacion.
+    ///
+    /// Se llama SIEMPRE, con true y con false: escribir solo los exitos dejaria el fallo
+    /// indistinguible de «todavia no se ha intentado», que es el estado del que este campo
+    /// vino a sacarnos.
+    /// </summary>
+    Task MarcarInvitacionEnviadaAsync(Guid tenantId, bool enviada, CancellationToken ct);
+
     /// <summary>Para reintentar un alta que quedo a medias.</summary>
     Task<Tenant?> BuscarPorSlugAsync(string slug, CancellationToken ct);
 

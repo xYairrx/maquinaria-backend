@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Equipos;
 using Maquinaria.Dominio.Activos;
@@ -84,13 +85,28 @@ internal sealed class ServicioEquiposEf(ContextoEmpresa bd) : IServicioEquipos
         var filas = await consulta
             .Skip(filtro.Saltar)
             .Take(filtro.TamanoEfectivo)
-            .Select(e => Proyectar(e))
+            .Select(Proyeccion())
             .ToListAsync(ct);
 
         return new Pagina<EquipoDto>(filas, filtro.Numero, filtro.TamanoEfectivo, total);
     }
 
-    private static EquipoDto Proyectar(Equipo e) => new(
+    /// <summary>
+    /// La proyeccion, en un solo sitio para las operaciones que la devuelven.
+    ///
+    /// DEVUELVE UN ARBOL DE EXPRESION, NO UN DTO. EF Core no sabe traducir una llamada a
+    /// metodo: con la forma anterior —`.Select(e => Proyectar(e))`— la proyeccion se
+    /// evaluaba EN EL CLIENTE, y como no hay `Include`, `e.Modelo!.Marca!.Nombre` reventaba
+    /// con NullReferenceException. Ademas los dos `Count` corrian una consulta POR FILA.
+    ///
+    /// Como expresion, EF traduce las navegaciones a JOIN y los conteos a subconsultas
+    /// correlacionadas, todo en el mismo SELECT.
+    ///
+    /// `DateTime.UtcNow` tambien se traduce: pasa a ser el reloj del servidor de base de
+    /// datos, no el de la aplicacion. Los dos son UTC, asi que el criterio de vigencia no
+    /// cambia, y evaluarlo ahi dentro es lo correcto —una sola verdad por consulta—.
+    /// </summary>
+    private static Expression<Func<Equipo, EquipoDto>> Proyeccion() => e => new EquipoDto(
         e.Id,
         e.CodigoInterno,
         e.ModeloEquipoId,
@@ -120,7 +136,7 @@ internal sealed class ServicioEquiposEf(ContextoEmpresa bd) : IServicioEquipos
         => bd.Equipos
             .AsNoTracking()
             .Where(e => e.Id == id)
-            .Select(e => Proyectar(e))
+            .Select(Proyeccion())
             .FirstOrDefaultAsync(ct);
 
     public async Task<Resultado<EquipoDto>> CrearAsync(AltaEquipo alta, CancellationToken ct)

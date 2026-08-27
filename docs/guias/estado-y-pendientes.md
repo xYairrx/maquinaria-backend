@@ -2,6 +2,82 @@
 
 Última verificación: 2026-08-27.
 
+## Las proyecciones se evaluaban en el cliente — 2026-08-27
+
+**Cinco servicios escribían su proyección como un método** y la usaban así:
+
+```csharp
+.Select(t => Proyectar(t))                 // <- una LLAMADA A MÉTODO
+private static TipoEquipoDto Proyectar(TipoEquipo t) => new(..., t.Categoria!.Nombre, ...);
+```
+
+EF Core no sabe traducir una llamada a método a SQL. Al no poder, **materializa las entidades y
+ejecuta la proyección en memoria** — y como ninguna consulta lleva `Include`, las navegaciones
+llegan en nulo. `t.Categoria!.Nombre` reventaba con `NullReferenceException`.
+
+No era teórico: tronó en la pantalla de Tipos en cuanto tuvo su primera fila. Y era invisible
+con la tabla vacía, porque sin filas el `Select` no se ejecuta sobre nada.
+
+Había un segundo costo, silencioso: los conteos del estilo `bd.Equipos.Count(...)` corrían
+**una consulta por fila**. Cincuenta equipos en pantalla eran ciento uno viajes a Neon.
+
+### El arreglo
+
+La proyección pasa a devolver un **árbol de expresión**, que es lo que EF sí sabe leer:
+
+```csharp
+.Select(Proyeccion())
+private Expression<Func<TipoEquipo, TipoEquipoDto>> Proyeccion() => t => new TipoEquipoDto(...);
+```
+
+`static` solo cuando no captura nada; las que usan `bd` para un conteo no pueden serlo.
+
+Verificado leyendo el SQL que EF genera, no suponiéndolo. Las navegaciones ahora son `JOIN` y
+los conteos subconsultas correlacionadas, todo en el mismo `SELECT`:
+
+```
+equipo         → INNER JOIN modelo_equipo, marca, tipo_equipo · LEFT JOIN ubicacion
+                 + count(*)::int FROM equipo_archivo · count(*)::int FROM equipo_tarifa
+trabajador     → INNER JOIN puesto · LEFT JOIN ubicacion
+equipo_tarifa  → INNER JOIN tarifa · LEFT JOIN cliente
+```
+
+El `LEFT JOIN` cae justo en las navegaciones anulables (`Ubicacion`, `Cliente`) y el `INNER`
+en las obligatorias, que es exactamente el modelo.
+
+### La excepción: `ServicioEquipoTarifasEf` va en DOS PASOS
+
+Su DTO expone `Unidad` como **texto** y lo obtenía con `t.Tarifa.Unidad.ToString()`. Ese
+`ToString()` no se puede traducir: la columna guarda el entero y los rótulos «Hora», «Dia»…
+solo existen en el CLR. Metido en el árbol, rompe con *could not be translated*.
+
+Así que la consulta trae la unidad **cruda** —un entero, que sí viaja— en un `record Fila`
+interno, y el nombre se resuelve después, ya en memoria, con `Fila.ADto()`.
+
+La diferencia con el error que se está corrigiendo está en **qué** queda del lado del cliente:
+antes eran entidades sin navegaciones, y por eso reventaba; ahora el `JOIN` lo hace la base y
+en el cliente solo queda traducir un entero a su rótulo, que no toca la base.
+
+### Alcance
+
+| Servicio | Estado |
+|---|---|
+| `ServicioTiposEquipoEf` | árbol de expresión |
+| `ServicioModelosEquipoEf` | árbol de expresión |
+| `ServicioEquiposEf` | árbol de expresión |
+| `ServicioTrabajadoresEf` | árbol de expresión |
+| `ServicioEquipoTarifasEf` | árbol de expresión + mapeo en memoria |
+
+Las 338 pruebas siguen en verde.
+
+> **Regla derivada:** dentro de un `IQueryable`, una proyección se escribe como
+> `Expression<Func<T, TDto>>`, nunca como un método. Si el compilador lo acepta no significa
+> que EF lo traduzca — **significa que lo va a hacer en memoria**, y con las navegaciones en
+> nulo. Cuando algo de verdad no sea traducible (un `ToString()` de enum, un formato), se parte
+> en dos pasos explícitos y se dice por qué en un comentario.
+
+---
+
 ## El documento OpenAPI se corrigió — 2026-08-27
 
 **`AddOpenApi()` se llamaba pelado**, sin transformadores, y sus valores por defecto producían

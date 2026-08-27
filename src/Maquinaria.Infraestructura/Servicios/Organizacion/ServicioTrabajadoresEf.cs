@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Organizacion;
 using Maquinaria.Dominio.Comun;
@@ -65,13 +66,23 @@ internal sealed class ServicioTrabajadoresEf(ContextoEmpresa bd) : IServicioTrab
         var filas = await consulta
             .Skip(filtro.Saltar)
             .Take(filtro.TamanoEfectivo)
-            .Select(t => Proyectar(t))
+            .Select(Proyeccion())
             .ToListAsync(ct);
 
         return new Pagina<TrabajadorDto>(filas, filtro.Numero, filtro.TamanoEfectivo, total);
     }
 
-    private static TrabajadorDto Proyectar(Trabajador t) => new(
+    /// <summary>
+    /// La proyeccion, en un solo sitio para las operaciones que la devuelven.
+    ///
+    /// DEVUELVE UN ARBOL DE EXPRESION, NO UN DTO. EF Core no sabe traducir una llamada a
+    /// metodo: con la forma anterior —`.Select(t => Proyectar(t))`— la proyeccion se
+    /// evaluaba EN EL CLIENTE, y como no hay `Include`, `t.Puesto!.Nombre` reventaba con
+    /// NullReferenceException.
+    ///
+    /// Como expresion, EF traduce las dos navegaciones a JOIN dentro del mismo SELECT.
+    /// </summary>
+    private static Expression<Func<Trabajador, TrabajadorDto>> Proyeccion() => t => new TrabajadorDto(
         t.Id,
         t.NumeroEmpleado,
         t.Nombre,
@@ -91,7 +102,7 @@ internal sealed class ServicioTrabajadoresEf(ContextoEmpresa bd) : IServicioTrab
         => bd.Trabajadores
             .AsNoTracking()
             .Where(t => t.Id == id)
-            .Select(t => Proyectar(t))
+            .Select(Proyeccion())
             .FirstOrDefaultAsync(ct);
 
     public async Task<Resultado<TrabajadorDto>> CrearAsync(

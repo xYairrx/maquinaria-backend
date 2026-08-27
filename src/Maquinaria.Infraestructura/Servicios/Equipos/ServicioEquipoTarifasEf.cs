@@ -1,6 +1,8 @@
+using System.Linq.Expressions;
 using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Equipos;
 using Maquinaria.Dominio.Activos;
+using Maquinaria.Dominio.Comercial;
 using Maquinaria.Infraestructura.Persistencia;
 using Maquinaria.Infraestructura.Servicios.Comun;
 using Microsoft.EntityFrameworkCore;
@@ -25,25 +27,65 @@ internal sealed class ServicioEquipoTarifasEf(ContextoEmpresa bd) : IServicioEqu
         // SIN PAGINAR, y es una decision: los precios de un equipo son unos pocos por
         // concepto. Paginarlos obligaria a la pantalla del expediente a pedir dos veces para
         // pintar una tabla de seis filas.
-        return await consulta
+        var filas = await consulta
             .OrderBy(t => t.Tarifa!.Nombre)
             .ThenByDescending(t => t.VigenciaDesde)
-            .Select(t => Proyectar(t))
+            .Select(Proyeccion())
             .ToListAsync(ct);
+
+        return filas.Select(f => f.ADto()).ToList();
     }
 
-    private static EquipoTarifaDto Proyectar(EquipoTarifa t) => new(
+    /// <summary>
+    /// La proyeccion, EN DOS PASOS, y esta es la unica de los servicios que lo necesita.
+    ///
+    /// El motivo es <c>Unidad.ToString()</c>. El resto de proyecciones se convirtieron en un
+    /// arbol de expresion tal cual —EF traduce las navegaciones a JOIN—, pero el nombre de un
+    /// enum no existe en la base: la columna guarda el entero, y los rotulos «Hora», «Dia»…
+    /// solo viven en el CLR. Meter ese <c>ToString()</c> en el arbol lo rompe con
+    /// «could not be translated».
+    ///
+    /// Asi que la consulta trae la UNIDAD CRUDA —un entero, que si se traduce— y el nombre se
+    /// resuelve despues, ya en memoria, con <see cref="Fila.ADto"/>. La diferencia con el
+    /// error anterior es donde ocurre cada cosa: antes se materializaban entidades SIN sus
+    /// navegaciones y `t.Tarifa!.Nombre` reventaba con NullReferenceException; ahora el JOIN
+    /// lo hace la base y lo unico que queda para el cliente es traducir un entero a su
+    /// rotulo, que no toca la base.
+    /// </summary>
+    private static Expression<Func<EquipoTarifa, Fila>> Proyeccion() => t => new Fila(
         t.Id,
         t.EquipoId,
         t.TarifaId,
         t.Tarifa!.Nombre,
-        t.Tarifa.Unidad.ToString(),
+        t.Tarifa.Unidad,
         t.ClienteId,
         t.Cliente == null ? null : t.Cliente.RazonSocial,
         t.Precio,
         t.Moneda,
         t.VigenciaDesde,
         t.VigenciaHasta);
+
+    /// <summary>
+    /// Lo que devuelve SQL: identico al DTO salvo que <c>Unidad</c> viaja como enum y no como
+    /// su nombre. Es interno a este servicio y no sale de aqui.
+    /// </summary>
+    private sealed record Fila(
+        Guid Id,
+        Guid EquipoId,
+        Guid TarifaId,
+        string Tarifa,
+        UnidadTarifa Unidad,
+        Guid? ClienteId,
+        string? Cliente,
+        decimal Precio,
+        string Moneda,
+        DateTime VigenciaDesde,
+        DateTime? VigenciaHasta)
+    {
+        public EquipoTarifaDto ADto() => new(
+            Id, EquipoId, TarifaId, Tarifa, Unidad.ToString(), ClienteId, Cliente,
+            Precio, Moneda, VigenciaDesde, VigenciaHasta);
+    }
 
     public async Task<Resultado<EquipoTarifaDto>> CrearAsync(
         Guid equipoId, AltaEquipoTarifa alta, CancellationToken ct)
@@ -155,12 +197,16 @@ internal sealed class ServicioEquipoTarifasEf(ContextoEmpresa bd) : IServicioEqu
         return Resultado<EquipoTarifaDto>.Ok((await ListarUnoAsync(id, ct))!);
     }
 
-    private Task<EquipoTarifaDto?> ListarUnoAsync(Guid id, CancellationToken ct)
-        => bd.EquipoTarifas
+    private async Task<EquipoTarifaDto?> ListarUnoAsync(Guid id, CancellationToken ct)
+    {
+        var fila = await bd.EquipoTarifas
             .AsNoTracking()
             .Where(t => t.Id == id)
-            .Select(t => Proyectar(t))
+            .Select(Proyeccion())
             .FirstOrDefaultAsync(ct);
+
+        return fila?.ADto();
+    }
 
     private static string? Validar(AltaEquipoTarifa alta)
         => alta.Precio < 0 ? "El precio no puede ser negativo."

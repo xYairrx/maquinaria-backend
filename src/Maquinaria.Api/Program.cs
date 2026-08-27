@@ -25,7 +25,10 @@ builder.Services.AddControllers();
 
 // Documento OpenAPI nativo de .NET 10 (sin Swashbuckle). Se expone en /openapi/v1.json,
 // que es la fuente del cliente HTTP generado del frontend (npm run api:sync).
-builder.Services.AddOpenApi();
+// Con transformadores: AddOpenApi() pelado emitia los numericos como `integer|string`
+// y los enums sin sus valores, y de ahi salian tipos debiles en el frontend generado.
+// El detalle, con las cifras medidas, esta en EsquemaOpenApi.
+builder.Services.AgregarOpenApiDelProducto();
 
 // Base central, opciones de JWT, hashing, tokens y casos de uso. Program.cs no conoce
 // ningun tipo concreto de infraestructura.

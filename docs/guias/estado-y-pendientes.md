@@ -1,6 +1,49 @@
 ﻿# Estado y pendientes
 
-Última verificación: 2026-08-26.
+Última verificación: 2026-08-27.
+
+## El documento OpenAPI se corrigió — 2026-08-27
+
+**`AddOpenApi()` se llamaba pelado**, sin transformadores, y sus valores por defecto producían
+un contrato impreciso. Se descubrió al montar `api:sync` en el frontend, que genera sus tipos
+de `/openapi/v1.json`. Medido contra el documento real:
+
+| Defecto | Alcance | Qué generaba en el front |
+|---|---|---|
+| Numéricos como unión con string | **279 campos** | `readonly modelos: number \| string` |
+| Enums sin sus valores | **15 tipos** | `EstadoRenta = number`. Nada impedía mandar `99` |
+
+Ninguno era un error del modelo ni de los controladores. El primero viene de que el lector de
+.NET acepta `"42"` además de `42`, cierto de la **entrada** pero aplicado también a las
+respuestas; el segundo, de que las convenciones guardan los enums como enteros y sin
+transformador el documento solo dice `type: integer`.
+
+El costo de dejarlo era concreto: con 18 pantallas por delante, un `Number(...)` repartido por
+todas, y perder la seguridad de tipos justo en las **máquinas de estados** de renta,
+cotización y contrato, que son el corazón de la fase.
+
+Arreglado en **`Maquinaria.Api/Arranque/EsquemaOpenApi.cs`**, un transformador de esquema que
+colapsa `type: ["integer","string"]` a `integer` y escribe los valores de cada enum con su
+descripción. Resultado verificado:
+
+```
+campos `number | string` :  279  →  0
+EstadoRenta              :  number  →  1 | 2 | ... | 10
+descripcion              :  "1 = Borrador · 2 = Confirmada · 3 = PorEntregar · ..."
+```
+
+Las 338 pruebas siguen en verde.
+
+**Lo que NO se arregló, a propósito:** los DTO de escritura salen con todos sus campos
+opcionales —`AltaMarca = { nombre?: string }`— porque son `readonly record struct` y .NET no
+los marca requeridos. A diferencia de los otros dos no contamina las lecturas, y el formulario
+del front valida antes de enviar.
+
+> **Regla derivada:** el documento OpenAPI es un **contrato**, no una cortesía. Un cambio en
+> los DTO que altere su forma se verifica con `npm run api:check` desde el repo del front, que
+> falla si los tipos generados quedaron desfasados.
+
+---
 
 ## La Fase 1 está escrita — 2026-08-26
 

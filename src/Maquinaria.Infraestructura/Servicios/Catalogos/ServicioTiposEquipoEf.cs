@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Maquinaria.Aplicacion.Catalogos;
 using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Dominio.Catalogos;
@@ -45,7 +46,7 @@ internal sealed class ServicioTiposEquipoEf(ContextoEmpresa bd) : IServicioTipos
         var filas = await consulta
             .Skip(filtro.Saltar)
             .Take(filtro.TamanoEfectivo)
-            .Select(t => Proyectar(t, bd))
+            .Select(Proyeccion())
             .ToListAsync(ct);
 
         return new Pagina<TipoEquipoDto>(filas, filtro.Numero, filtro.TamanoEfectivo, total);
@@ -54,12 +55,27 @@ internal sealed class ServicioTiposEquipoEf(ContextoEmpresa bd) : IServicioTipos
     /// <summary>
     /// La proyeccion, en un solo sitio para las cuatro operaciones que la devuelven.
     ///
+    /// DEVUELVE UN ARBOL DE EXPRESION, NO UN DTO, y ese detalle es la diferencia entre que
+    /// EF traduzca esto a SQL o lo ejecute en memoria.
+    ///
+    /// Antes era `private static TipoEquipoDto Proyectar(TipoEquipo t, ContextoEmpresa bd)` y
+    /// se usaba como `.Select(t => Proyectar(t, bd))`. EF Core NO SABE TRADUCIR UNA LLAMADA A
+    /// METODO, asi que evaluaba la proyeccion en el cliente: materializaba los TipoEquipo
+    /// —sin navegaciones, porque no hay Include— y ahi `t.Categoria!.Nombre` reventaba con
+    /// NullReferenceException. El `!` era una promesa al compilador que el runtime no cumplia.
+    ///
+    /// Y habia un segundo dano invisible: `bd.Equipos.Count(...)` tambien corria en cliente,
+    /// o sea UNA CONSULTA POR FILA. Justo lo contrario de lo que decia este comentario.
+    ///
+    /// Como expresion, EF traduce la navegacion a un JOIN y el conteo a una subconsulta
+    /// correlacionada, las dos en el mismo SELECT. `bd` se captura en el cierre, asi que el
+    /// metodo NO puede ser static.
+    ///
     /// El conteo de equipos es una SUBCONSULTA CORRELACIONADA y no una navegacion, porque
     /// <c>TipoEquipo</c> no expone la coleccion: el modelo la dejo fuera a proposito —un tipo
-    /// puede tener miles de equipos y nadie quiere esa propiedad cargable—. EF la traduce a
-    /// un escalar en el mismo SELECT.
+    /// puede tener miles de equipos y nadie quiere esa propiedad cargable—.
     /// </summary>
-    private static TipoEquipoDto Proyectar(TipoEquipo t, ContextoEmpresa bd) => new(
+    private Expression<Func<TipoEquipo, TipoEquipoDto>> Proyeccion() => t => new TipoEquipoDto(
         t.Id,
         t.Codigo,
         t.Nombre,
@@ -72,7 +88,7 @@ internal sealed class ServicioTiposEquipoEf(ContextoEmpresa bd) : IServicioTipos
         => bd.TiposEquipo
             .AsNoTracking()
             .Where(t => t.Id == id)
-            .Select(t => Proyectar(t, bd))
+            .Select(Proyeccion())
             .FirstOrDefaultAsync(ct);
 
     public async Task<Resultado<TipoEquipoDto>> CrearAsync(

@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Maquinaria.Aplicacion.Catalogos;
 using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Dominio.Catalogos;
@@ -56,13 +57,26 @@ internal sealed class ServicioModelosEquipoEf(ContextoEmpresa bd) : IServicioMod
         var filas = await consulta
             .Skip(filtro.Saltar)
             .Take(filtro.TamanoEfectivo)
-            .Select(m => Proyectar(m, bd))
+            .Select(Proyeccion())
             .ToListAsync(ct);
 
         return new Pagina<ModeloEquipoDto>(filas, filtro.Numero, filtro.TamanoEfectivo, total);
     }
 
-    private static ModeloEquipoDto Proyectar(ModeloEquipo m, ContextoEmpresa bd) => new(
+    /// <summary>
+    /// La proyeccion, en un solo sitio para las operaciones que la devuelven.
+    ///
+    /// DEVUELVE UN ARBOL DE EXPRESION, NO UN DTO. EF Core no sabe traducir una llamada a
+    /// metodo, asi que con la forma anterior —`.Select(m => Proyectar(m, bd))`— evaluaba la
+    /// proyeccion EN EL CLIENTE: materializaba los ModeloEquipo sin navegaciones —no hay
+    /// Include— y `m.Marca!.Nombre` reventaba con NullReferenceException. Ademas,
+    /// `bd.Equipos.Count(...)` corria una consulta POR FILA.
+    ///
+    /// Como expresion, EF traduce las dos navegaciones a JOIN y el conteo a una subconsulta
+    /// correlacionada, todo en el mismo SELECT. `bd` se captura en el cierre, asi que el
+    /// metodo NO puede ser static.
+    /// </summary>
+    private Expression<Func<ModeloEquipo, ModeloEquipoDto>> Proyeccion() => m => new ModeloEquipoDto(
         m.Id,
         m.MarcaId,
         m.Marca!.Nombre,
@@ -78,7 +92,7 @@ internal sealed class ServicioModelosEquipoEf(ContextoEmpresa bd) : IServicioMod
         => bd.ModelosEquipo
             .AsNoTracking()
             .Where(m => m.Id == id)
-            .Select(m => Proyectar(m, bd))
+            .Select(Proyeccion())
             .FirstOrDefaultAsync(ct);
 
     public async Task<Resultado<ModeloEquipoDto>> CrearAsync(

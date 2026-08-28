@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Terceros;
 using Maquinaria.Dominio.Comun;
@@ -41,13 +42,30 @@ internal sealed class ServicioProveedoresEf(ContextoEmpresa bd) : IServicioProve
         var filas = await consulta
             .Skip(filtro.Saltar)
             .Take(filtro.TamanoEfectivo)
-            .Select(p => Proyectar(p, bd))
+            .Select(Proyeccion())
             .ToListAsync(ct);
 
         return new Pagina<ProveedorDto>(filas, filtro.Numero, filtro.TamanoEfectivo, total);
     }
 
-    private static ProveedorDto Proyectar(Proveedor p, ContextoEmpresa bd) => new(
+    /// <summary>
+    /// DEVUELVE UN ARBOL DE EXPRESION, NO UN DTO.
+    ///
+    /// Con la forma anterior —<c>.Select(p => Proyectar(p, bd))</c>— EF no sabia traducir la
+    /// LLAMADA A METODO, asi que materializaba las entidades y corria la proyeccion EN
+    /// MEMORIA. Eso tenia dos costos, y el segundo no estaba anotado en ningun sitio:
+    ///
+    /// 1. El conteo de ordenes de compra se volvia una consulta POR FILA.
+    /// 2. **Y TRONABA.** Esa consulta sale sobre la MISMA conexion mientras el lector del
+    ///    listado sigue abierto, asi que en cuanto la tabla tiene una fila el endpoint
+    ///    responde 500. Con la tabla vacia no se nota: el Select no corre sobre nada.
+    ///
+    /// El plan de la Fase 1 clasificaba a Proveedors como «N+1, no truena». Era falso, y se
+    /// comprobo dando de alta la primera fila desde la pantalla.
+    ///
+    /// NO es <c>static</c> a proposito: captura <c>bd</c> para el conteo.
+    /// </summary>
+    private Expression<Func<Proveedor, ProveedorDto>> Proyeccion() => p => new ProveedorDto(
         p.Id, p.Codigo, p.RazonSocial, p.NombreComercial, p.Rfc, p.Telefono, p.Correo,
         p.Domicilio, p.Contacto, p.Activo,
         bd.OrdenesCompra.Count(o => o.ProveedorId == p.Id));
@@ -56,7 +74,7 @@ internal sealed class ServicioProveedoresEf(ContextoEmpresa bd) : IServicioProve
         => bd.Proveedores
             .AsNoTracking()
             .Where(p => p.Id == id)
-            .Select(p => Proyectar(p, bd))
+            .Select(Proyeccion())
             .FirstOrDefaultAsync(ct);
 
     public async Task<Resultado<ProveedorDto>> CrearAsync(

@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Cotizaciones;
 using Maquinaria.Dominio.Comercial;
@@ -79,7 +80,7 @@ internal sealed class ServicioCotizacionesEf(ContextoEmpresa bd, IFolios folios)
             .OrderByDescending(c => c.Fecha).ThenByDescending(c => c.Folio)
             .Skip(filtro.Saltar)
             .Take(filtro.TamanoEfectivo)
-            .Select(c => Encabezado(c))
+            .Select(Encabezado())
             .ToListAsync(ct);
 
         return new Pagina<CotizacionDto>(filas, filtro.Numero, filtro.TamanoEfectivo, total);
@@ -88,21 +89,33 @@ internal sealed class ServicioCotizacionesEf(ContextoEmpresa bd, IFolios folios)
     /// <summary>
     /// El listado va SIN LINEAS —lista vacia— a proposito: son N por documento y una pantalla
     /// de cincuenta cotizaciones no las pinta. El detalle las trae.
+    ///
+    /// DEVUELVE UN ARBOL DE EXPRESION, NO UN DTO.
+    ///
+    /// Con la forma anterior —<c>.Select(c => Encabezado(c))</c>— EF no sabia traducir la
+    /// LLAMADA A METODO y corria la proyeccion EN MEMORIA. Sin <c>Include</c>, las TRES
+    /// navegaciones que se leen aqui —cliente, ubicacion y trabajador— llegaban en nulo y
+    /// reventaban con <c>NullReferenceException</c> en cuanto hubiera una cotizacion.
+    ///
+    /// Como expresion, EF las traduce a tres JOIN en el mismo SELECT.
     /// </summary>
-    private static CotizacionDto Encabezado(Cotizacion c) => new(
+    private static Expression<Func<Cotizacion, CotizacionDto>> Encabezado() => c => new CotizacionDto(
         c.Id, c.Folio, c.ClienteId, c.Cliente!.RazonSocial,
         c.UbicacionId, c.Ubicacion!.Nombre,
         c.TrabajadorId, c.Trabajador!.Nombre,
         c.Fecha, c.VigenciaHasta, c.Estado,
         c.Subtotal, c.Descuento, c.Impuestos, c.Total, c.Notas,
-        []);
+        // `Array.Empty` y no `[]`: una EXPRESION DE COLECCION no cabe en un arbol de
+        // expresion —error CS9175— y esta proyeccion es uno desde que EF tiene que
+        // traducirla a SQL. El listado sigue yendo sin lineas: son N por documento.
+        Array.Empty<CotizacionLineaDto>());
 
     public async Task<CotizacionDto?> ObtenerAsync(Guid id, CancellationToken ct)
     {
         var encabezado = await bd.Cotizaciones
             .AsNoTracking()
             .Where(c => c.Id == id)
-            .Select(c => Encabezado(c))
+            .Select(Encabezado())
             .FirstOrDefaultAsync(ct);
 
         if (encabezado is null)
@@ -114,14 +127,58 @@ internal sealed class ServicioCotizacionesEf(ContextoEmpresa bd, IFolios folios)
             .AsNoTracking()
             .Where(l => l.CotizacionId == id)
             .OrderBy(l => l.Orden)
-            .Select(l => new CotizacionLineaDto(
-                l.Id, l.TarifaId, l.Tarifa!.Nombre, l.Tarifa.Unidad.ToString(),
-                l.EquipoId, l.Equipo == null ? null : l.Equipo.CodigoInterno,
-                l.TipoEquipoId, l.TipoEquipo == null ? null : l.TipoEquipo.Nombre,
-                l.Descripcion, l.Cantidad, l.PrecioUnitario, l.Importe, l.Orden))
+            .Select(Linea())
             .ToListAsync(ct);
 
-        return encabezado with { Lineas = lineas };
+        return encabezado with { Lineas = lineas.Select(l => l.ADto()).ToList() };
+    }
+
+    /// <summary>
+    /// La proyeccion de una linea, EN DOS PASOS. El mismo reparto que en
+    /// <c>ServicioEquipoTarifasEf</c>, y por el mismo motivo.
+    ///
+    /// EL MOTIVO ES <c>Unidad.ToString()</c>. El nombre de un enum no existe en la base: la
+    /// columna guarda el entero, y los rotulos «Hora», «Dia»… solo viven en el CLR. Meterlo en
+    /// el arbol lo rompe con «could not be translated».
+    ///
+    /// Y ROMPE AUNQUE NO HAYA NI UNA LINEA. La traduccion a SQL ocurre ANTES de ejecutar, asi
+    /// que la consulta revienta con la tabla vacia igual que con mil filas. Por eso este
+    /// defecto no se parece a los de proyeccion por llamada a metodo —esos solo aparecian con
+    /// la primera fila—: aqui el 500 salia al CREAR la primera cotizacion, porque
+    /// <c>CrearAsync</c> termina llamando a <c>ObtenerAsync</c>. La cotizacion quedaba
+    /// guardada y la respuesta era un error, que es la peor combinacion posible.
+    ///
+    /// Asi que la consulta trae la UNIDAD CRUDA —un entero, que si se traduce— y el rotulo se
+    /// resuelve despues, ya en memoria, en <see cref="Fila.ADto"/>.
+    /// </summary>
+    private static Expression<Func<CotizacionLinea, Fila>> Linea() => l => new Fila(
+        l.Id, l.TarifaId, l.Tarifa!.Nombre, l.Tarifa.Unidad,
+        l.EquipoId, l.Equipo == null ? null : l.Equipo.CodigoInterno,
+        l.TipoEquipoId, l.TipoEquipo == null ? null : l.TipoEquipo.Nombre,
+        l.Descripcion, l.Cantidad, l.PrecioUnitario, l.Importe, l.Orden);
+
+    /// <summary>
+    /// Lo que devuelve SQL: identico al DTO salvo que <c>Unidad</c> viaja como enum y no como
+    /// su nombre. Es interno a este servicio y no sale de aqui.
+    /// </summary>
+    private sealed record Fila(
+        Guid Id,
+        Guid TarifaId,
+        string Tarifa,
+        UnidadTarifa Unidad,
+        Guid? EquipoId,
+        string? Equipo,
+        Guid? TipoEquipoId,
+        string? TipoEquipo,
+        string? Descripcion,
+        decimal Cantidad,
+        decimal PrecioUnitario,
+        decimal Importe,
+        int Orden)
+    {
+        public CotizacionLineaDto ADto() => new(
+            Id, TarifaId, Tarifa, Unidad.ToString(), EquipoId, Equipo,
+            TipoEquipoId, TipoEquipo, Descripcion, Cantidad, PrecioUnitario, Importe, Orden);
     }
 
     public async Task<Resultado<CotizacionDto>> CrearAsync(
@@ -336,14 +393,10 @@ internal sealed class ServicioCotizacionesEf(ContextoEmpresa bd, IFolios folios)
         var creada = await bd.CotizacionLineas
             .AsNoTracking()
             .Where(l => l.Id == nueva.Id)
-            .Select(l => new CotizacionLineaDto(
-                l.Id, l.TarifaId, l.Tarifa!.Nombre, l.Tarifa.Unidad.ToString(),
-                l.EquipoId, l.Equipo == null ? null : l.Equipo.CodigoInterno,
-                l.TipoEquipoId, l.TipoEquipo == null ? null : l.TipoEquipo.Nombre,
-                l.Descripcion, l.Cantidad, l.PrecioUnitario, l.Importe, l.Orden))
+            .Select(Linea())
             .FirstAsync(ct);
 
-        return Resultado<CotizacionLineaDto>.Ok(creada);
+        return Resultado<CotizacionLineaDto>.Ok(creada.ADto());
     }
 
     public async Task<Resultado> QuitarLineaAsync(

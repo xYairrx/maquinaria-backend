@@ -140,8 +140,20 @@ public readonly record struct AltaExtension(
     string? Motivo);
 
 /// <param name="HorometrosDevolucion">
-/// Lectura de horometro por linea al devolver. Opcional: no todos los equipos lo llevan, y el
-/// modulo de horometros es M12, Fase 2.
+/// Lectura de horometro al devolver, indexada por <b>EQUIPO</b> —<c>equipo_id</c>— y NO por
+/// linea. Decia «por linea» y era falso: <c>RegistrarDevolucionAsync</c> resuelve con
+/// <c>lecturas.TryGetValue(linea.EquipoId, ...)</c>.
+///
+/// Un cliente que indexara por el id de la LINEA no recibiria ningun error: la clave que no
+/// case <b>se ignora en silencio</b> y la renta se cierra con el horometro en blanco. Costo
+/// exactamente eso al escribir la pantalla; corregido el 2026-08-28.
+///
+/// Opcional: no todos los equipos llevan horometro, y el modulo de horometros es M12, Fase 2.
+///
+/// ponytail: ignorar una clave desconocida es lo que hace invisible el error. Rechazar con 400
+/// lo que no corresponde a ninguna linea seria mas seguro; queda anotado y no se cambia porque
+/// el mapa PARCIAL —solo los equipos que si llevan horometro— es un caso legitimo y hay que
+/// distinguirlo de la clave equivocada antes de tocar nada.
 /// </param>
 public readonly record struct CierreDeRenta(
     Dictionary<Guid, decimal>? HorometrosDevolucion,

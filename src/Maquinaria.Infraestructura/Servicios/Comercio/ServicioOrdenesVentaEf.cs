@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Maquinaria.Aplicacion.Comercio;
 using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Dominio.Activos;
@@ -47,24 +48,38 @@ internal sealed class ServicioOrdenesVentaEf(ContextoEmpresa bd, IFolios folios)
             .OrderByDescending(o => o.Fecha).ThenByDescending(o => o.Folio)
             .Skip(filtro.Saltar)
             .Take(filtro.TamanoEfectivo)
-            .Select(o => Encabezado(o))
+            .Select(Encabezado())
             .ToListAsync(ct);
 
         return new Pagina<OrdenVentaDto>(filas, filtro.Numero, filtro.TamanoEfectivo, total);
     }
 
-    private static OrdenVentaDto Encabezado(OrdenVenta o) => new(
+    /// <summary>
+    /// DEVUELVE UN ARBOL DE EXPRESION, NO UN DTO.
+    ///
+    /// Con la forma anterior —<c>.Select(Encabezado())</c>— EF no sabia traducir la
+    /// LLAMADA A METODO y corria la proyeccion EN MEMORIA. Sin <c>Include</c>, las dos
+    /// navegaciones que se leen aqui —cliente y trabajador— llegaban en nulo y reventaban
+    /// con <c>NullReferenceException</c> en cuanto hubiera una orden.
+    ///
+    /// Se busco tambien el otro defecto de esta familia —un <c>ToString()</c> de enum dentro
+    /// del <c>Select</c>, que revienta incluso con la tabla vacia— y aqui no hay ninguno.
+    /// </summary>
+    private static Expression<Func<OrdenVenta, OrdenVentaDto>> Encabezado() => o => new OrdenVentaDto(
         o.Id, o.Folio, o.ClienteId, o.Cliente!.RazonSocial,
         o.TrabajadorId, o.Trabajador!.Nombre,
         o.Fecha, o.Estado, o.Subtotal, o.Descuento, o.Impuestos, o.Total,
-        o.AutorizadaEn, o.FinalizadaEn, o.Notas, []);
+        o.AutorizadaEn, o.FinalizadaEn, o.Notas,
+        // `Array.Empty` y no `[]`: una EXPRESION DE COLECCION no cabe en un arbol de
+        // expresion —error CS9175—. Los renglones van en una segunda consulta.
+        Array.Empty<OrdenVentaDetalleDto>());
 
     public async Task<OrdenVentaDto?> ObtenerAsync(Guid id, CancellationToken ct)
     {
         var orden = await bd.OrdenesVenta
             .AsNoTracking()
             .Where(o => o.Id == id)
-            .Select(o => Encabezado(o))
+            .Select(Encabezado())
             .FirstOrDefaultAsync(ct);
 
         if (orden is null)

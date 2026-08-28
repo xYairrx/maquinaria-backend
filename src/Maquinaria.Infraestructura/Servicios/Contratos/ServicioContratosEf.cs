@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Contratos;
 using Maquinaria.Dominio.Comercial;
@@ -49,17 +50,33 @@ internal sealed class ServicioContratosEf(ContextoEmpresa bd, IFolios folios)
             .OrderByDescending(c => c.FechaInicio).ThenByDescending(c => c.Folio)
             .Skip(filtro.Saltar)
             .Take(filtro.TamanoEfectivo)
-            .Select(c => Encabezado(c))
+            .Select(Encabezado())
             .ToListAsync(ct);
 
         return new Pagina<ContratoDto>(filas, filtro.Numero, filtro.TamanoEfectivo, total);
     }
 
-    private static ContratoDto Encabezado(Contrato c) => new(
+    /// <summary>
+    /// DEVUELVE UN ARBOL DE EXPRESION, NO UN DTO.
+    ///
+    /// Con la forma anterior —<c>.Select(Encabezado())</c>— EF no sabia traducir la
+    /// LLAMADA A METODO y corria la proyeccion EN MEMORIA. Sin <c>Include</c>, las dos
+    /// navegaciones que se leen aqui —renta y cliente— llegaban en nulo y reventaban con
+    /// <c>NullReferenceException</c> en cuanto hubiera un contrato.
+    ///
+    /// Como expresion, EF las traduce a dos INNER JOIN en el mismo SELECT: las dos son
+    /// obligatorias —un contrato siempre cuelga de una renta y de un cliente—.
+    ///
+    /// Se busco tambien el otro defecto de esta familia —un <c>ToString()</c> de enum dentro
+    /// del <c>Select</c>, que revienta incluso con la tabla vacia— y aqui no hay ninguno.
+    /// </summary>
+    private static Expression<Func<Contrato, ContratoDto>> Encabezado() => c => new ContratoDto(
         c.Id, c.Folio, c.RentaId, c.Renta!.Folio,
         c.ClienteId, c.Cliente!.RazonSocial,
         c.FechaInicio, c.FechaFin, c.Deposito, c.Estado, c.FirmadoEn, c.Notas,
-        []);
+        // `Array.Empty` y no `[]`: una EXPRESION DE COLECCION no cabe en un arbol de
+        // expresion —error CS9175—. Las clausulas van en una segunda consulta.
+        Array.Empty<ContratoClausulaDto>());
 
     public Task<ContratoDto?> ObtenerAsync(Guid id, CancellationToken ct)
         => ConClausulasAsync(c => c.Id == id, ct);
@@ -68,12 +85,12 @@ internal sealed class ServicioContratosEf(ContextoEmpresa bd, IFolios folios)
         => ConClausulasAsync(c => c.RentaId == rentaId, ct);
 
     private async Task<ContratoDto?> ConClausulasAsync(
-        System.Linq.Expressions.Expression<Func<Contrato, bool>> filtro, CancellationToken ct)
+        Expression<Func<Contrato, bool>> filtro, CancellationToken ct)
     {
         var contrato = await bd.Contratos
             .AsNoTracking()
             .Where(filtro)
-            .Select(c => Encabezado(c))
+            .Select(Encabezado())
             .FirstOrDefaultAsync(ct);
 
         if (contrato is null)

@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Rentas;
 using Maquinaria.Dominio.Comercial;
@@ -69,13 +70,27 @@ internal sealed class ServicioRentasEf(ContextoEmpresa bd, IFolios folios) : ISe
             .OrderByDescending(r => r.Inicio).ThenByDescending(r => r.Folio)
             .Skip(filtro.Saltar)
             .Take(filtro.TamanoEfectivo)
-            .Select(r => Encabezado(r))
+            .Select(Encabezado())
             .ToListAsync(ct);
 
         return new Pagina<RentaDto>(filas, filtro.Numero, filtro.TamanoEfectivo, total);
     }
 
-    private static RentaDto Encabezado(Renta r) => new(
+    /// <summary>
+    /// DEVUELVE UN ARBOL DE EXPRESION, NO UN DTO.
+    ///
+    /// Con la forma anterior —<c>.Select(r => Encabezado(r))</c>— EF no sabia traducir la
+    /// LLAMADA A METODO y corria la proyeccion EN MEMORIA. Sin <c>Include</c>, las dos
+    /// navegaciones obligatorias que se leen aqui —cliente y trabajador— llegaban en nulo y
+    /// reventaban con <c>NullReferenceException</c> en cuanto hubiera una renta.
+    ///
+    /// Como expresion, EF las traduce a JOIN en el mismo SELECT: INNER para las obligatorias y
+    /// LEFT para <c>Cotizacion</c>, que es anulable —una renta puede nacer sin cotizacion—.
+    ///
+    /// <c>LugarRenta</c> se construye dentro del arbol y eso SI se traduce: es un objeto que EF
+    /// materializa con columnas de la misma fila, no una llamada a codigo del cliente.
+    /// </summary>
+    private static Expression<Func<Renta, RentaDto>> Encabezado() => r => new RentaDto(
         r.Id, r.Folio, r.ClienteId, r.Cliente!.RazonSocial,
         r.CotizacionId, r.Cotizacion == null ? null : r.Cotizacion.Folio,
         r.TrabajadorId, r.Trabajador!.Nombre,
@@ -86,14 +101,17 @@ internal sealed class ServicioRentasEf(ContextoEmpresa bd, IFolios folios) : ISe
             r.LugarContacto, r.LugarTelefono),
         r.Deposito, r.Anticipo, r.Subtotal, r.Descuento, r.Impuestos, r.Total, r.Saldo,
         r.Notas,
-        [], []);
+        // `Array.Empty` y no `[]`: una EXPRESION DE COLECCION no cabe en un arbol de expresion
+        // —error CS9175—. El listado va sin lineas ni conceptos a proposito: son N por
+        // documento. El detalle los trae en dos consultas aparte.
+        Array.Empty<RentaLineaDto>(), Array.Empty<RentaConceptoDto>());
 
     public async Task<RentaDto?> ObtenerAsync(Guid id, CancellationToken ct)
     {
         var renta = await bd.Rentas
             .AsNoTracking()
             .Where(r => r.Id == id)
-            .Select(r => Encabezado(r))
+            .Select(Encabezado())
             .FirstOrDefaultAsync(ct);
 
         if (renta is null)

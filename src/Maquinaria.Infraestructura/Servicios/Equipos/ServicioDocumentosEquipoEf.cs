@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Equipos;
 using Maquinaria.Dominio.Activos;
@@ -17,10 +18,24 @@ internal sealed class ServicioDocumentosEquipoEf(ContextoEmpresa bd)
             .Where(a => a.EquipoId == equipoId && a.Archivo!.EliminadoEn == null)
             .OrderBy(a => a.Tipo)
             .ThenByDescending(a => a.CreadoEn)
-            .Select(a => Proyectar(a))
+            .Select(Proyeccion())
             .ToListAsync(ct);
 
-    private static DocumentoEquipoDto Proyectar(EquipoArchivo a) => new(
+    /// <summary>
+    /// DEVUELVE UN ARBOL DE EXPRESION, NO UN DTO.
+    ///
+    /// Con la forma anterior —<c>.Select(a => Proyectar(a))</c>— EF no sabia traducir la
+    /// LLAMADA A METODO, asi que materializaba las entidades y corria la proyeccion EN
+    /// MEMORIA. Y como la consulta no lleva <c>Include</c>, <c>a.Archivo</c> llegaba en NULO:
+    /// <c>a.Archivo!.NombreOriginal</c> reventaba con <c>NullReferenceException</c> en cuanto
+    /// el equipo tuviera su primer documento.
+    ///
+    /// Como expresion, EF traduce la navegacion a un JOIN y todo sale en el mismo SELECT.
+    ///
+    /// Es <c>static</c> porque no captura nada: aqui no hay conteos contra <c>bd</c>.
+    /// </summary>
+    private static Expression<Func<EquipoArchivo, DocumentoEquipoDto>> Proyeccion() => a =>
+        new DocumentoEquipoDto(
         a.Id,
         a.EquipoId,
         a.ArchivoId,

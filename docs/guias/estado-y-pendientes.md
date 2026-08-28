@@ -48,7 +48,7 @@ ya conocida. `dotnet test` deja `Maquinaria.Api.Tests` en **205 pruebas, 0 fallo
 
 ### Pendiente de Fase 0
 
-- [ ] `Dockerfile` para el despliegue en Railway
+- [x] `Dockerfile` para el despliegue en Railway
 - [x] `ContextoEmpresa`, su fábrica de tiempo de diseño apuntando a `maquinaria_plantilla`, y las **7 entidades de autenticación y permisos** con sus 7 configuraciones
 - [x] Migraciones `EmpresaInicial` y `EmpresaSemillaSeguridad` **aplicadas** a `maquinaria_plantilla`: extensiones `btree_gist` y `pg_trgm`, el trigger `rol_sistema_inmutable`, 108 permisos y los 9 roles
 - [x] Los 18 constraints y el trigger de la base de empresa verificados contra la base real, caso por caso, más 3 casos positivos

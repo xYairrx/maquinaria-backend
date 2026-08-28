@@ -232,6 +232,51 @@ SELECT pg_temp.intentar(22, 'segundo contrato para la misma renta', 'rechaza', $
 $q$);
 
 -- ---------------------------------------------------------------------------
+-- ...PERO SU CICLO DE VIDA SI AVANZA
+--
+-- EL HUECO QUE ESTAS PRUEBAS LLENAN. Las de arriba comprueban que el CONTENIDO de un
+-- contrato autorizado esta congelado —17, 18, 19, 20, 21— y ninguna comprobaba que el
+-- ESTADO pueda seguir avanzando. Con esa mitad sin probar, `contrato_inmutable` bloqueaba
+-- tambien el UPDATE que solo mueve `estado`: Firmado y Terminado eran inalcanzables y
+-- `firmado_en` no podia tener valor nunca, mientras las 22 pruebas pasaban en verde.
+--
+-- Se detecto el 2026-08-28 usando la pantalla, no leyendo el esquema. Corregido en la
+-- migracion EmpresaContratoAvanzaEstado.
+--
+-- Van numeradas 31-35 y no 22.x porque `intentar` recibe `p_n int`: un 22.1 se redondearia
+-- a 22 y las cinco saldrian con el mismo numero en el reporte.
+-- ---------------------------------------------------------------------------
+
+SELECT pg_temp.intentar(31, 'FIRMAR un contrato autorizado', 'acepta', $q$
+    UPDATE contrato SET estado = 3, firmado_en = now()
+    WHERE id = 'cccccccc-0000-0000-0000-000000000001';
+$q$);
+
+SELECT pg_temp.intentar(32, 'TERMINAR un contrato firmado', 'acepta', $q$
+    UPDATE contrato SET estado = 4
+    WHERE id = 'cccccccc-0000-0000-0000-000000000001';
+$q$);
+
+-- Y el contenido sigue congelado DESPUES de firmar, que es lo que la garantia protege de
+-- verdad: si el texto pudiera cambiar despues de la firma, la firma no significaria nada.
+SELECT pg_temp.intentar(33, 'cambiar el deposito de un contrato firmado', 'rechaza', $q$
+    UPDATE contrato SET deposito = 99999
+    WHERE id = 'cccccccc-0000-0000-0000-000000000001';
+$q$);
+
+SELECT pg_temp.intentar(34, 'cambiar la fecha de un contrato firmado', 'rechaza', $q$
+    UPDATE contrato SET fecha_fin = '2027-01-01'
+    WHERE id = 'cccccccc-0000-0000-0000-000000000001';
+$q$);
+
+-- Mover el estado Y el contenido en el mismo UPDATE tampoco pasa: se comparan las columnas
+-- una por una, asi que colar un cambio de contenido junto a uno de estado se rechaza igual.
+SELECT pg_temp.intentar(35, 'colar un cambio de notas junto al de estado', 'rechaza', $q$
+    UPDATE contrato SET estado = 4, notas = 'colado'
+    WHERE id = 'cccccccc-0000-0000-0000-000000000001';
+$q$);
+
+-- ---------------------------------------------------------------------------
 -- UN SOLO PRECIO VIGENTE
 -- ---------------------------------------------------------------------------
 

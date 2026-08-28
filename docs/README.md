@@ -17,6 +17,7 @@ SaaS multi-tenant para empresas de renta de maquinaria y equipo.
 | [05-esquema-fase0.md](05-esquema-fase0.md) | DDL de las 19 tablas de la Fase 0, aprovisionamiento, login, índices, migraciones | Al escribir las entidades y migraciones de la Fase 0 |
 | [06-alcance-fase1.md](06-alcance-fase1.md) | **El alcance del primer entregable.** Qué entra, qué no, las decisiones con su historial, y el inventario de 28 tablas | **Antes de tocar cualquier cosa de la Fase 1** |
 | [06-esquema-fase1.sql](06-esquema-fase1.sql) | **El DDL completo de las 28 tablas**, con sus `CHECK`, `EXCLUDE`, columnas generadas y triggers. Se lee de corrido | Al escribir una entidad o una migración de la Fase 1 |
+| [07-plan-fase1.md](07-plan-fase1.md) | **Cómo se construye la Fase 1**: estructura de carpetas, la regla Servicio/Proceso, las once rebanadas con su estado, las adaptaciones al esquema migrado y el plan de codificación archivo por archivo | **Antes de escribir código de la Fase 1**, y para saber qué falta |
 | [pruebas-esquema-fase1.sql](pruebas-esquema-fase1.sql) | **30 pruebas de las garantías** contra una base real: traslape de rentas, bodega/sucursal/patio, contrato inmutable. Corre en una transacción y hace `ROLLBACK` | Después de tocar una restricción, un trigger o una columna generada |
 
 La especificación funcional original del negocio **ya está en el repositorio**:

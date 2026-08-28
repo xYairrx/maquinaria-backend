@@ -480,3 +480,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Almacenamiento de archivos en disco (desarrollo). La raiz la define
+# Archivos:Raiz y su contenido son documentos de clientes: nunca se commitea.
+/archivos/

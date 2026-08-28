@@ -103,7 +103,7 @@ Verificado contra el código el 2026-08-24. Sin ellos el repo compila y no sirve
 |---|---|---|
 | `ConnectionStrings:Central` | La cadena **con** `-pooler` | **Al arrancar.** `SembrarSuperadminAsync` corre antes de `app.Run()` y consulta la base; `RegistroInfraestructura` lanza `Falta ConnectionStrings:Central` |
 | `ConnectionStrings:Migraciones` | La cadena **directa, sin** `-pooler` | En `dotnet ef` y en el alta de una empresa, no al arrancar. `FabricaConexionesEmpresa` la necesita en **tiempo de ejecución** para el `CREATE DATABASE` |
-| `Jwt:Llave` | Mínimo **32 bytes**, para HMAC-SHA256 | En el **primer login**. `ProveedorTokensJwt` valida el largo en su constructor, y es singleton: se construye al resolverlo, no al arrancar |
+| `Jwt:Llave` | Mínimo **32 bytes**, para HMAC-SHA256 | **Al arrancar** desde el 2026-08-26: `AddOptions<OpcionesJwt>().Validate(...).ValidateOnStart()` mide el largo y el proceso no levanta. Antes reventaba en el **primer login** —el constructor de `ProveedorTokensJwt` es la comprobación, y siendo singleton solo se construía al resolverlo—, así que un despliegue con la variable mal puesta contestaba `/salud` y no dejaba entrar a nadie. La comprobación del constructor sigue puesta como segunda línea. **`migrar-empresas` no exige la llave**: ese camino crea un ámbito de `app.Services` y nunca arranca el host, así que la validación no corre |
 | `Arranque:Superadmin:{Correo,Contrasena,Nombre}` | El primer superadministrador | **No revienta: se salta en silencio.** El sembrador registra *«Sin Arranque:Superadmin configurado»* y sigue. El resultado es una API viva contra la que nadie puede iniciar sesión, porque no hay registro público en ninguna parte |
 
 Dos detalles que cuestan un rato:
@@ -152,9 +152,10 @@ Lo que vive en `appsettings.json` y se commitea a propósito. Los valores de la 
 | `Jwt:AudienciaPlataforma` | `maquinaria-plataforma` | — | Tokens de superadministrador |
 | `Jwt:AudienciaEmpresa` | `maquinaria-empresa` | — | Tokens de usuario de empresa |
 | `Jwt:MinutosPlataforma` | `60` | — | Larga porque la plataforma no tiene refresco |
-| `Jwt:MinutosEmpresa` | `15` | — | Corta **porque la empresa sí tiene refresco rotativo**. Es la ventana durante la cual un permiso revocado sigue surtiendo efecto: el refresco vuelve a resolver la compuerta, así que subirla alarga ese hueco. No está en `appsettings.json`; el valor vive en `OpcionesJwt` |
+| `Jwt:MinutosEmpresa` | `15` | — | Corta **porque la empresa sí tiene refresco rotativo**. Es la ventana durante la cual un permiso revocado sigue surtiendo efecto: el refresco vuelve a resolver la compuerta, así que subirla alarga ese hueco |
+| `Jwt:DiasRefresco` | `30` | — | Vigencia del token de refresco de empresa. La plataforma no tiene refresco, así que esto no le aplica |
 | `Correo:Proveedor` | `resend` | — | `log` o `resend` |
-| `Correo:Remitente` | `onboarding@resend.dev` | — | Debe ser de un dominio verificado |
+| `Correo:Remitente` | `no-reply@maqvia.com` | — | Debe ser de un dominio verificado |
 | `Correo:UrlBaseAplicacion` | `http://localhost:4200` | — | Base de las ligas. El slug se le inserta en el **host** |
 | `Correo:DevolverLigaEnRespuesta` | `false` | `true` | En producción regalaría la sesión del administrador de un cliente |
 | `Correo:DiasVigenciaInvitacion` | `7` | — | La vigencia del **restablecimiento no está aquí**: es una hora y vive en el dominio |

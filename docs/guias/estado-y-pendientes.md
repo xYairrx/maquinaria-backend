@@ -2,6 +2,117 @@
 
 Última verificación: 2026-08-27.
 
+## `contrato_inmutable` deja dos estados INALCANZABLES — 2026-08-28
+
+Salio probando el ciclo del contrato desde la pantalla. **Borrador → Autorizado funciona; de ahi
+no se puede mover nada.** Firmado y Terminado no se alcanzan por ningun camino y `firmado_en` no
+puede tener valor nunca.
+
+```sql
+CREATE TRIGGER contrato_inmutable
+    BEFORE UPDATE OR DELETE ON contrato
+    FOR EACH ROW
+    WHEN (OLD.estado <> 1)                              -- cualquier fila fuera de Borrador
+    EXECUTE FUNCTION contrato_proteger_autorizado();    -- y la funcion SIEMPRE lanza
+```
+
+El trigger no mira QUE columna cambia: rechaza cualquier `UPDATE` sobre un contrato fuera de
+Borrador, **incluido el que solo mueve `estado`**. `CambiarEstadoAsync` hace exactamente eso.
+
+### Es una contradiccion dentro del propio backend
+
+| Dice | Que declara |
+|---|---|
+| `IServicioContratos` | «FUERA DE BORRADOR NO SE TOCA NADA» — coherente con el trigger |
+| `ServicioContratosEf.Transiciones` | `Autorizado → Firmado, Terminado` y `Firmado → Terminado` |
+| `EstadoContrato` | Cuatro valores, CHECK `BETWEEN 1 AND 4` |
+| `ContratoDto.FirmadoEn` | Existe, y `CambiarEstadoAsync` lo pone al pasar a Firmado |
+
+Gana el trigger: **tres filas de `Transiciones` estan muertas**, dos valores del enum no se usan
+y un campo del DTO es siempre nulo.
+
+### Por que NO se corrigio aqui
+
+Elegir entre las dos lecturas es una decision de PRODUCTO con una migracion detras, no el
+arreglo mecanico de una proyeccion. Las dos salidas posibles:
+
+1. **El contrato se firma** —lo que sugieren `FirmadoEn` y el alcance—. Entonces el trigger es
+   demasiado ancho: tiene que dejar avanzar `estado`, `firmado_en` y `actualizado_en`, y seguir
+   prohibiendo el resto. Se hace moviendo la comprobacion del `WHEN` al cuerpo de la funcion y
+   comparando columna por columna, algo asi:
+
+```sql
+CREATE OR REPLACE FUNCTION contrato_proteger_autorizado() RETURNS trigger AS $
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'El contrato % ya esta autorizado y no se puede borrar', OLD.folio;
+    END IF;
+
+    -- Lo unico que puede avanzar es el ciclo de vida. El CONTENIDO sigue congelado.
+    IF (NEW.renta_id, NEW.cliente_id, NEW.folio, NEW.fecha_inicio, NEW.fecha_fin,
+        NEW.deposito, NEW.notas)
+       IS DISTINCT FROM
+       (OLD.renta_id, OLD.cliente_id, OLD.folio, OLD.fecha_inicio, OLD.fecha_fin,
+        OLD.deposito, OLD.notas) THEN
+        RAISE EXCEPTION
+            'El contrato % ya esta autorizado: su contenido no se puede modificar', OLD.folio;
+    END IF;
+
+    RETURN NEW;
+END $ LANGUAGE plpgsql;
+```
+
+   Ojo: eso **no** valida que la transicion sea legal —de eso ya se encarga `Transiciones` en el
+   servicio—; solo deja de bloquear el cambio de estado.
+
+2. **Autorizado es el final.** Entonces sobran dos valores del enum, `FirmadoEn`, tres filas de
+   `Transiciones` y parte del endpoint que las ofrece.
+
+### Por que 22 pruebas en verde no lo vieron
+
+El trigger **si tenia pruebas** —17, 18, 19, 20 y 21—, y ahi esta lo interesante: **todas cubren
+la misma mitad**. Comprueban que el CONTENIDO de un contrato autorizado esta congelado, y ninguna
+comprobaba que su ESTADO pueda seguir avanzando.
+
+Con esa mitad sin probar, el trigger bloqueaba tambien el `UPDATE` que solo mueve `estado` y las
+22 pruebas seguian en verde. Es la forma mas cara de un hueco de cobertura: no falta una prueba
+de algo que nadie escribio, falta **la contraparte** de una que si existe.
+
+Se agregaron las pruebas 31-35: firmar, terminar, y tres que confirman que el contenido sigue
+congelado despues de firmar —incluida la de colar un cambio de notas junto al de estado, que el
+`IS DISTINCT FROM` por columnas rechaza—.
+
+### Verificado contra la base, las DOS mitades
+
+La migracion se aplico a `maquinaria_prueba` el 2026-08-28 y se comprobo asi:
+
+**La mitad del ciclo de vida, desde la pantalla:** Borrador → Autorizado → Firmado → Terminado.
+`firmado_en` quedo con valor por primera vez, y desde Terminado el boton de cambiar estado
+desaparece. Antes de la migracion el segundo salto fallaba siempre.
+
+**La mitad del contenido congelado, contra la base directamente**, porque **la aplicacion no
+tiene forma de editar un contrato** —no existe `PUT`—: esa garantia no se puede ejercitar desde
+ninguna pantalla. Se corrio dentro de una transaccion que se deshizo al terminar:
+
+| Prueba | Esperado | Obtenido |
+|---|---|---|
+| mover el estado fuera de Borrador | acepta | acepta |
+| cambiar el deposito | rechaza | rechaza |
+| cambiar la fecha de fin | rechaza | rechaza |
+| cambiar las notas | rechaza | rechaza |
+| **colar notas JUNTO al cambio de estado** | rechaza | rechaza |
+| cambiar la renta a la que cuelga | rechaza | rechaza |
+| BORRAR el contrato | rechaza | rechaza |
+
+La quinta es la que importa de verdad: comparar columna por columna es lo que impide que un
+cambio de contenido viaje escondido dentro de un cambio de estado legitimo.
+
+> **Falta una pieza de tooling:** `pruebas-esquema-fase1.sql` no se puede correr en esta maquina
+> —no hay `psql` instalado— y por eso la comprobacion se hizo con un programa desechable. Vale la
+> pena resolverlo: las pruebas de esquema son la red que dejo pasar este defecto, y una red que
+> nadie puede ejecutar no protege.
+
+---
 ## Las proyecciones se evaluaban en el cliente — 2026-08-27
 
 **Cinco servicios escribían su proyección como un método** y la usaban así:
@@ -45,7 +156,7 @@ equipo_tarifa  → INNER JOIN tarifa · LEFT JOIN cliente
 El `LEFT JOIN` cae justo en las navegaciones anulables (`Ubicacion`, `Cliente`) y el `INNER`
 en las obligatorias, que es exactamente el modelo.
 
-### La excepción: `ServicioEquipoTarifasEf` va en DOS PASOS
+### La excepción: los servicios que van en DOS PASOS
 
 Su DTO expone `Unidad` como **texto** y lo obtenía con `t.Tarifa.Unidad.ToString()`. Ese
 `ToString()` no se puede traducir: la columna guarda el entero y los rótulos «Hora», «Dia»…
@@ -58,6 +169,26 @@ La diferencia con el error que se está corrigiendo está en **qué** queda del 
 antes eran entidades sin navegaciones, y por eso reventaba; ahora el `JOIN` lo hace la base y
 en el cliente solo queda traducir un entero a su rótulo, que no toca la base.
 
+#### Y una diferencia más importante: CUÁNDO falla — 2026-08-28
+
+Este servicio dejó de ser la única excepción. `ServicioCotizacionesEf` tenía el mismo
+`Unidad.ToString()` en las dos proyecciones de línea, y ahí quedó claro algo que no estaba
+escrito:
+
+> **Los dos defectos fallan en momentos distintos.** La proyección escrita como método solo
+> revienta **cuando la tabla tiene su primera fila** —con cero filas el `Select` no corre sobre
+> nada—. El `ToString()` no espera a nada: **la traducción a SQL ocurre antes de ejecutar**, así
+> que la consulta falla igual con la tabla vacía.
+
+Por eso su síntoma fue el peor de los dos. `POST /api/cotizaciones` respondía **500** al crear
+la primera cotización —porque `CrearAsync` termina llamando a `ObtenerAsync`, que trae las
+líneas— **con la cotización ya guardada**: `SaveChangesAsync` había confirmado antes de que la
+segunda consulta se tradujera.
+
+**Al revisar los servicios que faltan hay que buscar los DOS**, no solo el primero: una
+proyección escrita como método, y cualquier `ToString()` dentro de un `Select`. Hasta hoy solo
+estaba escrito el primero, y por eso este apareció usando la pantalla y no leyendo el código.
+
 ### Alcance
 
 | Servicio | Estado |
@@ -67,8 +198,40 @@ en el cliente solo queda traducir un entero a su rótulo, que no toca la base.
 | `ServicioEquiposEf` | árbol de expresión |
 | `ServicioTrabajadoresEf` | árbol de expresión |
 | `ServicioEquipoTarifasEf` | árbol de expresión + mapeo en memoria |
+| `ServicioClientesEf` | árbol de expresión · 2026-08-28 |
+| `ServicioProveedoresEf` | árbol de expresión · 2026-08-28 |
+| `ServicioDocumentosEquipoEf` | árbol de expresión · 2026-08-28 |
+| `ServicioCotizacionesEf` | árbol de expresión + mapeo en memoria · 2026-08-28 |
+| `ServicioRentasEf` | árbol de expresión · 2026-08-28 · sin `ToString()`, se buscó |
+| `ServicioContratosEf` | árbol de expresión · 2026-08-28 |
+| `ServicioOrdenesCompraEf` | árbol de expresión · 2026-08-28 · verificado desde la pantalla |
+| `ServicioOrdenesVentaEf` | árbol de expresión · 2026-08-28 · verificado desde la pantalla |
 
-Las 338 pruebas siguen en verde.
+**Las 338 pruebas pasan con las trece filas corregidas** —comprobado el 2026-08-28 con la API
+detenida—, más la migración `EmpresaContratoAvanzaEstado` aplicada.
+
+> **Correrlas exige parar la API.** `dotnet test` no puede reconstruir con las DLL tomadas por
+> el proceso de Visual Studio: falla con `MSB3027`, el mismo síntoma descrito en «dos instancias
+> de la API a la vez». Durante toda la construcción del frontend la API estuvo levantada, así que
+> la suite quedó sin correr varios días; lo que se comprobó mientras tanto, y que la suite NO
+> cubre porque es unitaria y no toca la base:
+>
+> | Servicio | Cómo se comprobó |
+> |---|---|
+> | Clientes, Proveedores, Documentos | Dando de alta la primera fila desde su pantalla |
+> | Cotizaciones | Ciclo completo en el navegador, incluido el 409 de enviar sin líneas |
+> | Rentas | Ciclo completo, incluido el `EXCLUDE` rechazando un traslape real |
+> | Contratos | Ciclo completo, incluidos los dos 409 y la firma tras la migración |
+> | Órdenes de compra y de venta | Ciclo completo: comprar da de alta la máquina, vender le cierra el calendario |
+>
+> Esa columna es lo que la suite no puede decir: son 338 pruebas UNITARIAS y **ninguna toca
+> Postgres**, así que un defecto de traducción a SQL —que es exactamente lo que eran los trece—
+> les pasa por debajo. Las dos comprobaciones son complementarias, no redundantes.
+
+> **La clasificación «N+1, no truena» de Clientes y Proveedores era FALSA.** Se comprobó dando
+> de alta la primera fila desde la pantalla: el endpoint pasó a responder 500, porque el conteo
+> de la proyección en memoria sale sobre la MISMA conexión mientras el lector del listado sigue
+> abierto. Se escribió mal por haberla mirado con las tablas vacías.
 
 > **Regla derivada:** dentro de un `IQueryable`, una proyección se escribe como
 > `Expression<Func<T, TDto>>`, nunca como un método. Si el compilador lo acepta no significa

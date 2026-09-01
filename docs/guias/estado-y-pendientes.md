@@ -2,6 +2,98 @@
 
 Última verificación: 2026-09-01.
 
+## Suspender de verdad, y mensajes de error que se pueden traducir — 2026-09-01
+
+Tres cosas que salieron de probar la pantalla de estados recien hecha.
+
+### 1. El cambio de estado no surtia efecto durante un minuto
+
+Se marcaba una empresa como suspendida y **seguia pudiendo iniciar sesion**.
+
+`DirectorioTenantsEf` cachea el tenant resuelto `SegundosCacheTenant` —60 por omision— bajo
+sus dos llaves, y `MiddlewareTenant` decide con lo que hay ahi. `CambiarEstadoAsync` escribia
+la base y **no invalidaba la cache**. El aprovisionamiento ya lo hacia al terminar de crear
+una base; faltaba por el otro extremo del ciclo de vida.
+
+Un minuto de gracia no es una demora aceptable en la operacion que existe justamente para
+cortar el acceso YA. Una linea: `directorio.Invalidar(tenant.Id, tenant.Slug)`.
+
+### 2. Una empresa suspendida decia «credenciales incorrectas»
+
+Quien tenia bien empresa, correo y contrasena se quedaba pensando que se habia equivocado.
+
+**El mensaje se dice, y solo DESPUES de verificar las credenciales.** Ese orden es lo unico
+que impide que la pantalla de login se convierta en un buscador de clientes: quien acerto
+correo y contrasena de esa empresa ya sabia que existe, asi que decirselo no le regala nada;
+a quien solo prueba slugs le sigue contestando el mensaje uniforme.
+
+Va como **403 y no 401**: un 401 dispara el interceptor de refresco del frontend, que
+intentaria renovar una sesion que no existe.
+
+Para poder comprobar la contrasena hay que abrir la base de la empresa, y el middleware no
+resolvia una empresa que no puede operar. Se partio `PuedeOperar` en dos:
+
+| Propiedad | Que dice |
+|---|---|
+| `BaseDisponible` | Su base existe y esta migrada. La mitad TECNICA |
+| `PuedeOperar` | `BaseDisponible` **y** ademas su situacion comercial lo permite |
+
+El middleware resuelve por ruta con `BaseDisponible`, asi que una empresa **suspendida** se
+resuelve y una que todavia se esta aprovisionando no —abrir su base daria errores de tabla
+inexistente—.
+
+**Eso tenia un efecto de lado que hubo que cerrar**: `EstaResuelto` dejo de significar «puede
+operar» en el camino anonimo, asi que invitacion, restablecimiento y refresco ahora
+comprueban `PuedeOperar` por su cuenta. Sin esas cinco guardas, una empresa suspendida habria
+empezado a aceptar invitaciones en silencio.
+
+`SuspensionEnElLoginPruebas` fija el orden, y **se comprobo que muerde**: moviendo la
+comprobacion antes de verificar la contrasena —que es donde apetece ponerla— falla
+`Con_la_contrasena_MAL_y_empresa_suspendida_NO_se_dice`.
+
+### 3. El 429 llegaba sin cuerpo
+
+El limitador rechazaba con el codigo pelado, asi que el cliente solo podia enseñar
+«Error 429». Ahora `OnRejected` escribe un `ProblemDetails` con los segundos que faltan
+—sacados de los metadatos del propio limitador— y la cabecera `Retry-After`.
+
+### Y de ahi salio el mecanismo de traduccion
+
+El frontend tenia una regla —«no reescribas el texto que manda la API»— con buena razon
+detras: los mensajes del login son uniformes a proposito y reescribirlos a ojo puede deshacer
+esa uniformidad. El precio era que llegan siempre en espanol, porque la API no lee
+`Accept-Language`, y en la interfaz en ingles se veian en espanol.
+
+Un **codigo estable** rompe el empate. Viaja en `extensions`, no es texto para leer, y el
+cliente lo traduce a SU idioma sin inventarse nada:
+
+```jsonc
+{ "title": "...", "detail": "El servicio ... suspendido.", "codigo": "servicio_suspendido" }
+```
+
+Los codigos viven en un solo sitio, `Errores/CodigosProblema.cs`, y se pusieron en **los 29
+mensajes de texto fijo** de 24 controladores.
+
+Dos decisiones:
+
+- **Un codigo NO distingue mas de lo que el servidor decidio distinguir.** Las cinco causas
+  del rechazo del login comparten `credenciales_incorrectas`. Un codigo por causa habria sido
+  el enumerador de clientes por la puerta de atras.
+- **Los dieciocho «no existe» comparten `no_encontrado`**, con `entidad` aparte. Dieciocho
+  codigos serian dieciocho constantes en los dos lados para decir lo mismo.
+
+### Lo que sigue en espanol
+
+**15 sitios** cuyo texto NO es fijo: los `resultado.Motivo` de los servicios y los que llevan
+datos dentro —«No existe un tipo de limite activo con la clave 'x'. Los validos son: …»—. Se
+redactan en Aplicacion componiendo valores, asi que traducirlos no es ponerles un codigo: es
+darle a cada REGLA de validacion su propio codigo y sus parametros, y reescribir los servicios
+para devolver eso en lugar de una cadena. Es un trabajo aparte, y bastante mayor.
+
+**455 pruebas, 0 fallos** (eran 448).
+
+---
+
 ## Los estados de una empresa ya se pueden mover — 2026-09-01
 
 Salió de una pregunta: «¿por qué todas las empresas dicen Prueba?». Porque **nada podía

@@ -1,5 +1,6 @@
-using Maquinaria.Aplicacion.Comun;
+﻿using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Organizacion;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Comun;
 using Maquinaria.Api.Controladores.Catalogos;
 using Maquinaria.Api.Seguridad;
@@ -43,7 +44,12 @@ public sealed class UbicacionesController(IServicioUbicaciones servicio) : Contr
             ? Problem(
                 title: "No encontrado",
                 detail: "La ubicacion no existe.",
-                statusCode: StatusCodes.Status404NotFound)
+                statusCode: StatusCodes.Status404NotFound,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.NoEncontrado,
+                    ["entidad"] = "ubicacion",
+                })
             : Ok(ubicacion);
     }
 

@@ -1,5 +1,6 @@
-using Maquinaria.Aplicacion.Comun;
+﻿using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Disponibilidad;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Comun;
 using Maquinaria.Api.Seguridad;
 using Microsoft.AspNetCore.Authorization;
@@ -37,7 +38,11 @@ public sealed class DisponibilidadController(IServicioOcupacion servicio) : Cont
             return Problem(
                 title: "Peticion rechazada",
                 detail: "El periodo es obligatorio: manda desde y hasta.",
-                statusCode: StatusCodes.Status400BadRequest);
+                statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.PeriodoObligatorio,
+                });
         }
 
         if (filtro.Hasta <= filtro.Desde)
@@ -45,7 +50,11 @@ public sealed class DisponibilidadController(IServicioOcupacion servicio) : Cont
             return Problem(
                 title: "Peticion rechazada",
                 detail: "La fecha final tiene que ser posterior a la inicial.",
-                statusCode: StatusCodes.Status400BadRequest);
+                statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.PeriodoInvertido,
+                });
         }
 
         return Ok(await servicio.DisponiblesAsync(filtro, ct));

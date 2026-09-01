@@ -10,6 +10,7 @@ using Maquinaria.Infraestructura;
 using Maquinaria.Infraestructura.Seguridad;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -68,6 +69,42 @@ builder.Services.AddHealthChecks()
 builder.Services.AddRateLimiter(opciones =>
 {
     opciones.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // EL 429 SE CONTESTA CON CUERPO, y antes no. El limitador rechaza con el codigo pelado,
+    // asi que el cliente no recibia ni un `ProblemDetails`: la pantalla acababa enseñando
+    // «Error 429», que no le dice a nadie que espere un momento ni por que se le corto.
+    //
+    // El texto va AQUI y no en el frontend, por la misma regla que el resto de los mensajes
+    // de error: el servidor los redacta y el cliente los muestra tal cual.
+    opciones.OnRejected = async (contexto, ct) =>
+    {
+        // Cuanto falta para que la ventana se reabra. El limitador lo sabe y lo ofrece en
+        // los metadatos; sin esta cabecera, «espera un momento» es un consejo sin numero.
+        var espera = contexto.Lease.TryGetMetadata(MetadataName.RetryAfter, out var valor)
+            ? (int)Math.Ceiling(valor.TotalSeconds)
+            : 60;
+
+        contexto.HttpContext.Response.Headers.RetryAfter = espera.ToString();
+
+        await contexto.HttpContext.Response.WriteAsJsonAsync(
+            new ProblemDetails
+            {
+                Type = "https://tools.ietf.org/html/rfc6585#section-4",
+                Title = "Demasiados intentos",
+                Status = StatusCodes.Status429TooManyRequests,
+                Detail = $"Se hicieron demasiados intentos seguidos. Vuelve a intentarlo en "
+                    + $"{espera} segundos.",
+
+                // El codigo para traducir, y los segundos APARTE del texto: asi el cliente
+                // arma la frase en su idioma en lugar de recibirla hecha en el nuestro.
+                Extensions =
+                {
+                    ["codigo"] = CodigosProblema.DemasiadosIntentos,
+                    ["segundos"] = espera,
+                },
+            },
+            ct);
+    };
 
     // El acceso de empresa se particiona por SLUG e IP. Poder hacerlo es la razon de
     // que el slug vaya en la ruta: aqui todavia no se ha leido el cuerpo.

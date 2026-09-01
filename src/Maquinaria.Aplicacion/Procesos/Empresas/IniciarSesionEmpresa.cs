@@ -3,6 +3,11 @@ using System.Net;
 using Maquinaria.Aplicacion.Plataforma;
 using Maquinaria.Aplicacion.Seguridad;
 using Maquinaria.Dominio.Seguridad;
+
+// ALIAS Y NO EL ESPACIO DE NOMBRES ENTERO: Maquinaria.Dominio.Plataforma tambien tiene un
+// `Usuario`, homonimo del de empresa a proposito —son la misma idea en dos mundos separados
+// fisicamente— y traerlo aqui vuelve ambigua cada mencion. De ahi solo hace falta el enum.
+using EstadoTenant = Maquinaria.Dominio.Plataforma.EstadoTenant;
 using Microsoft.Extensions.Logging;
 
 namespace Maquinaria.Aplicacion.Empresas;
@@ -33,6 +38,34 @@ public readonly record struct SesionEmpresa(
     string Empresa,
     bool AccesoTotal,
     IReadOnlyList<string> Permisos);
+
+/// <summary>
+/// Los tres desenlaces de un intento de inicio de sesion.
+///
+/// El tercero existe por una razon concreta: una empresa SUSPENDIDA contestaba «empresa,
+/// correo o contrasena incorrectos», y quien tenia bien las tres cosas se quedaba pensando
+/// que se habia equivocado de contrasena.
+///
+/// SOLO SE DICE DESPUES DE VALIDAR LAS CREDENCIALES, y ese orden es lo que impide que se
+/// convierta en un enumerador de clientes: quien acerto correo y contrasena de esa empresa
+/// ya sabia que existe, asi que decirselo no le regala nada. A quien solo prueba slugs le
+/// sigue contestando el mensaje uniforme.
+/// </summary>
+/// <param name="ServicioDetenido">
+/// El estado que impide operar —Suspendido o Cancelado— cuando las credenciales SI eran
+/// correctas. Nulo en los otros dos desenlaces.
+/// </param>
+public readonly record struct ResultadoSesionEmpresa(
+    SesionEmpresa? Sesion,
+    EstadoTenant? ServicioDetenido)
+{
+    public static ResultadoSesionEmpresa Exito(SesionEmpresa sesion) => new(sesion, null);
+
+    /// <summary>El mensaje uniforme: no existe, no coincide, o no esta activo.</summary>
+    public static ResultadoSesionEmpresa Rechazado() => new(null, null);
+
+    public static ResultadoSesionEmpresa Detenido(EstadoTenant estado) => new(null, estado);
+}
 
 /// <summary>
 /// Las DOS formas de obtener una sesion de empresa: iniciarla con slug, correo y
@@ -104,7 +137,7 @@ public sealed class IniciarSesionEmpresa(
     /// </summary>
     private IUsuariosEmpresa Usuarios => usuariosDe();
 
-    public async Task<SesionEmpresa?> EjecutarAsync(
+    public async Task<ResultadoSesionEmpresa> EjecutarAsync(
         string slug, PeticionSesionEmpresa peticion, string? ip, string? agente,
         CancellationToken ct)
     {
@@ -117,7 +150,7 @@ public sealed class IniciarSesionEmpresa(
         {
             hash.VerificarSenuelo(peticion.Contrasena);
             log.LogInformation("Inicio de sesion rechazado para {Slug}/{Correo}.", slug, correo);
-            return null;
+            return ResultadoSesionEmpresa.Rechazado();
         }
 
         var tenant = contextoTenant.Actual;
@@ -131,7 +164,7 @@ public sealed class IniciarSesionEmpresa(
         {
             hash.VerificarSenuelo(peticion.Contrasena);
             log.LogInformation("Inicio de sesion rechazado para {Slug}/{Correo}.", slug, correo);
-            return null;
+            return ResultadoSesionEmpresa.Rechazado();
         }
 
         var verificacion = hash.Verificar(usuario.HashContrasena, peticion.Contrasena);
@@ -139,7 +172,21 @@ public sealed class IniciarSesionEmpresa(
         if (!verificacion.EsValida)
         {
             log.LogInformation("Inicio de sesion rechazado para {Slug}/{Correo}.", slug, correo);
-            return null;
+            return ResultadoSesionEmpresa.Rechazado();
+        }
+
+        // AQUI, Y NO ANTES. Las credenciales ya se comprobaron, asi que quien llega a esta
+        // linea pertenece a la empresa y decirle por que no entra no le informa de nada que
+        // no supiera. Puesto antes, seria un enumerador de clientes.
+        //
+        // No se abre sesion ni se registra acceso: no entra. Solo se le explica.
+        if (!tenant.PuedeOperar)
+        {
+            log.LogInformation(
+                "{Correo} acerto sus credenciales en {Slug}, pero la empresa esta en {Estado}.",
+                correo, slug, tenant.Estado);
+
+            return ResultadoSesionEmpresa.Detenido(tenant.Estado);
         }
 
         // El login exitoso es el UNICO momento en que tenemos la contrasena en claro, y
@@ -158,7 +205,8 @@ public sealed class IniciarSesionEmpresa(
 
         log.LogInformation("{Correo} inicio sesion en {Slug}.", correo, slug);
 
-        return Emitir(usuario, tenant, accesoTotal, permisos, roles, refresco.EnClaro);
+        return ResultadoSesionEmpresa.Exito(
+            Emitir(usuario, tenant, accesoTotal, permisos, roles, refresco.EnClaro));
     }
 
     /// <summary>
@@ -214,7 +262,12 @@ public sealed class IniciarSesionEmpresa(
     {
         // IsNullOrWhiteSpace y no Trim() directo: el cuerpo lo deserializa el framework y
         // un JSON sin la propiedad deja la cadena en null pese al tipo no anulable.
-        if (string.IsNullOrWhiteSpace(peticion.TokenRefresco) || !contextoTenant.EstaResuelto)
+        if (string.IsNullOrWhiteSpace(peticion.TokenRefresco)
+            || !contextoTenant.EstaResuelto
+            // Desde que el middleware resuelve tambien las suspendidas, esto hay
+            // que decirlo aqui. El refresco se queda con su 401 uniforme: quien
+            // lo reciba vuelve al login, y ahi si le explican por que.
+            || !contextoTenant.Actual.PuedeOperar)
         {
             log.LogInformation("Refresco rechazado en {Slug}.", slug);
             return null;

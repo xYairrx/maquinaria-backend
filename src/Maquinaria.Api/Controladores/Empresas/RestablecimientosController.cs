@@ -1,4 +1,5 @@
-using Maquinaria.Aplicacion.Empresas;
+﻿using Maquinaria.Aplicacion.Empresas;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Seguridad;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -73,7 +74,11 @@ public sealed class RestablecimientosController(
             : Problem(
                 title: "Liga no valida",
                 detail: "La liga no existe, ya se uso o caduco.",
-                statusCode: StatusCodes.Status404NotFound);
+                statusCode: StatusCodes.Status404NotFound,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.LigaNoValida,
+                });
     }
 
     [HttpPost("{token}")]

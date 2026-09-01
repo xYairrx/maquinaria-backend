@@ -1,5 +1,6 @@
-using Maquinaria.Aplicacion.Comun;
+﻿using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Terceros;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Comun;
 using Maquinaria.Api.Seguridad;
 using Maquinaria.Dominio.Terceros;
@@ -42,7 +43,12 @@ public sealed class ClientesController(IServicioClientes servicio) : ControllerB
             ? Problem(
                 title: "No encontrado",
                 detail: "El cliente no existe.",
-                statusCode: StatusCodes.Status404NotFound)
+                statusCode: StatusCodes.Status404NotFound,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.NoEncontrado,
+                    ["entidad"] = "cliente",
+                })
             : Ok(cliente);
     }
 

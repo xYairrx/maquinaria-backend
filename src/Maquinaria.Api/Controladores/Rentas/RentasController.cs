@@ -1,6 +1,7 @@
-using Maquinaria.Aplicacion.Comun;
+﻿using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Procesos.Rentas;
 using Maquinaria.Aplicacion.Rentas;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Comun;
 using Maquinaria.Api.Seguridad;
 using Maquinaria.Dominio.Comercial;
@@ -54,7 +55,12 @@ public sealed class RentasController(
             ? Problem(
                 title: "No encontrado",
                 detail: "La renta no existe.",
-                statusCode: StatusCodes.Status404NotFound)
+                statusCode: StatusCodes.Status404NotFound,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.NoEncontrado,
+                    ["entidad"] = "renta",
+                })
             : Ok(renta);
     }
 

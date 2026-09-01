@@ -6,7 +6,8 @@ using Npgsql;
 
 namespace Maquinaria.Infraestructura.Empresas;
 
-internal sealed class RegistroTenantsEf(ContextoCentral central) : IRegistroTenants
+internal sealed class RegistroTenantsEf(ContextoCentral central, IDirectorioTenants directorio)
+    : IRegistroTenants
 {
     public Task<bool> ExisteSlugAsync(string slug, CancellationToken ct)
         // Sin filtrar por eliminado_en: el UNIQUE de slug es global, asi que un slug de
@@ -60,6 +61,17 @@ internal sealed class RegistroTenantsEf(ContextoCentral central) : IRegistroTena
         tenant.ActualizadoEn = DateTime.UtcNow;
 
         await central.SaveChangesAsync(ct);
+
+        // SIN ESTO EL CAMBIO NO SURTE EFECTO HASTA UN MINUTO DESPUES, y ese minuto es
+        // exactamente el agujero: `DirectorioTenantsEf` cachea el tenant resuelto durante
+        // `SegundosCacheTenant` —60 por omision— bajo sus dos llaves, y `MiddlewareTenant`
+        // decide con lo que hay ahi. Suspender a un cliente y que siga pudiendo iniciar
+        // sesion durante un minuto no es una demora aceptable en la operacion que existe
+        // justamente para cortarle el acceso YA.
+        //
+        // El aprovisionamiento ya lo hacia al terminar de crear una base; esto es lo mismo
+        // por el otro extremo del ciclo de vida.
+        directorio.Invalidar(tenant.Id, tenant.Slug);
 
         // Se relee de la lista en lugar de armar el resumen a mano: asi la fila que recibe
         // el panel es EXACTAMENTE la misma forma que le llega en el listado, con su plan y

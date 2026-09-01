@@ -1,5 +1,6 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Maquinaria.Aplicacion.Plataforma;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Seguridad;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -34,7 +35,11 @@ public sealed class SesionController(IniciarSesionPlataforma iniciarSesion) : Co
             return Problem(
                 title: "Datos incompletos",
                 detail: "Correo y contrasena son obligatorios.",
-                statusCode: StatusCodes.Status400BadRequest);
+                statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.CredencialesObligatorias,
+                });
         }
 
         var sesion = await iniciarSesion.EjecutarAsync(peticion, ct);
@@ -46,7 +51,11 @@ public sealed class SesionController(IniciarSesionPlataforma iniciarSesion) : Co
             ? Problem(
                 title: "Credenciales incorrectas",
                 detail: "Correo o contrasena incorrectos.",
-                statusCode: StatusCodes.Status401Unauthorized)
+                statusCode: StatusCodes.Status401Unauthorized,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.CredencialesIncorrectas,
+                })
             : Ok(sesion.Value);
     }
 

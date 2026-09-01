@@ -1,4 +1,5 @@
 ﻿using Maquinaria.Aplicacion.Empresas;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Seguridad;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -40,7 +41,11 @@ public sealed class EmpresasController(
             return Problem(
                 title: "Datos incompletos",
                 detail: "Slug, razon social, y correo y nombre del administrador son obligatorios.",
-                statusCode: StatusCodes.Status400BadRequest);
+                statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.AltaEmpresaIncompleta,
+                });
         }
 
         var resultado = await aprovisionar.EjecutarAsync(alta, ct);
@@ -92,7 +97,11 @@ public sealed class EmpresasController(
             return Problem(
                 title: "Estado no valido",
                 detail: "El estado debe ser 1 prueba, 2 activo, 3 suspendido o 4 cancelado.",
-                statusCode: StatusCodes.Status400BadRequest);
+                statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.EstadoNoValido,
+                });
         }
 
         var empresa = await registro.CambiarEstadoAsync(slug, cambio.Estado, ct);

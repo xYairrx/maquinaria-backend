@@ -114,7 +114,18 @@ internal sealed class MiddlewareTenant(RequestDelegate siguiente, ILogger<Middle
 
         var tenant = await directorio.BuscarPorSlugAsync(slug, contexto.RequestAborted);
 
-        if (tenant is not null && tenant.PuedeOperar && !contextoTenant.EstaResuelto)
+        // SE RESUELVE CON `BaseDisponible` Y NO CON `PuedeOperar`, y el matiz es todo:
+        // una empresa SUSPENDIDA se resuelve, una que todavia se esta aprovisionando no.
+        //
+        // Hace falta para poder decirle «tu servicio esta suspendido» a quien acierta su
+        // contrasena: comprobar la contrasena exige abrir la base de la empresa, y sin
+        // resolverla el caso de uso no llega ni a mirarla.
+        //
+        // ESTO NO AUTORIZA NADA. `EstaResuelto` deja de significar «puede operar» en este
+        // camino, asi que CADA caso de uso anonimo comprueba `PuedeOperar` por su cuenta —
+        // el login para dar su mensaje, y los demas para seguir cerrados—. El camino del
+        // JWT, mas abajo, sigue rechazando de plano.
+        if (tenant is not null && tenant.BaseDisponible && !contextoTenant.EstaResuelto)
         {
             contextoTenant.Establecer(tenant);
         }

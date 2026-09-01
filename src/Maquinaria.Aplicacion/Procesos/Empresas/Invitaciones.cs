@@ -50,7 +50,7 @@ public sealed class Invitaciones(
     public async Task<InvitacionVigente?> ConsultarAsync(
         string slug, string tokenEnClaro, CancellationToken ct)
     {
-        if (!contextoTenant.EstaResuelto)
+        if (!contextoTenant.EstaResuelto || !contextoTenant.Actual.PuedeOperar)
         {
             return null;
         }
@@ -75,7 +75,7 @@ public sealed class Invitaciones(
             return ResultadoAceptacion.Rechazado(PoliticaContrasena.Explicacion);
         }
 
-        if (!contextoTenant.EstaResuelto)
+        if (!contextoTenant.EstaResuelto || !contextoTenant.Actual.PuedeOperar)
         {
             return ResultadoAceptacion.Rechazado("La liga no es valida o ya se uso.");
         }

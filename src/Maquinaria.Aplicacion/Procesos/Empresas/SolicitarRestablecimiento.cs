@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Maquinaria.Aplicacion.Correo;
 using Maquinaria.Aplicacion.Plataforma;
 using Maquinaria.Aplicacion.Seguridad;
@@ -99,7 +99,7 @@ public sealed class SolicitarRestablecimiento(
         // El middleware ya intento resolver el tenant por el slug de la ruta. Que no lo
         // haya logrado significa que la empresa no existe o no puede operar, y las dos
         // salen por aqui sin distinguirse.
-        if (!contextoTenant.EstaResuelto)
+        if (!contextoTenant.EstaResuelto || !contextoTenant.Actual.PuedeOperar)
         {
             hash.VerificarSenuelo(correoNormalizado);
             log.LogInformation("Solicitud de restablecimiento sin destinatario en {Slug}.", slug);

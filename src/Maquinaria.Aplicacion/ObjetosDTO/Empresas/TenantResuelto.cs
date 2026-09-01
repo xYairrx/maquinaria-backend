@@ -46,9 +46,23 @@ public sealed record TenantResuelto(
     /// cuya base todavia no esta lista tampoco: abrir una base a medio aprovisionar
     /// daria errores de tabla inexistente en lugar de un mensaje claro.
     /// </summary>
-    public bool PuedeOperar
-        => Estado is EstadoTenant.Prueba or EstadoTenant.Activo
-        && Aprovisionamiento is EstadoAprovisionamiento.Lista;
+    public bool PuedeOperar => BaseDisponible
+        && Estado is EstadoTenant.Prueba or EstadoTenant.Activo;
+
+    /// <summary>
+    /// Si su base de datos existe y esta migrada. Es la MITAD TECNICA de
+    /// <see cref="PuedeOperar"/>, separada porque hay un caso que necesita distinguirlas:
+    /// el login de una empresa suspendida.
+    ///
+    /// Para poder decirle «tu servicio esta suspendido» a quien acierta su contrasena hay
+    /// que poder comprobar esa contrasena, y eso exige abrir su base. Una empresa suspendida
+    /// tiene base; una que todavia se esta aprovisionando, no —y abrirla daria errores de
+    /// tabla inexistente en lugar de un mensaje claro—.
+    ///
+    /// NO SE USA PARA AUTORIZAR NADA. Quien decide si la empresa opera sigue siendo
+    /// <see cref="PuedeOperar"/>.
+    /// </summary>
+    public bool BaseDisponible => Aprovisionamiento is EstadoAprovisionamiento.Lista;
 
     /// <summary>
     /// El cupo efectivo de un limite: el del tenant si lo declaro, o el que se pase

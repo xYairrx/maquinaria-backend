@@ -1,6 +1,7 @@
-using Maquinaria.Aplicacion.Comercio;
+﻿using Maquinaria.Aplicacion.Comercio;
 using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Procesos.Comercio;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Comun;
 using Maquinaria.Api.Seguridad;
 using Microsoft.AspNetCore.Authorization;
@@ -44,7 +45,12 @@ public sealed class OrdenesVentaController(
             ? Problem(
                 title: "No encontrado",
                 detail: "La orden no existe.",
-                statusCode: StatusCodes.Status404NotFound)
+                statusCode: StatusCodes.Status404NotFound,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.NoEncontrado,
+                    ["entidad"] = "orden_venta",
+                })
             : Ok(orden);
     }
 

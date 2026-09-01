@@ -1,5 +1,6 @@
-using Maquinaria.Aplicacion.Catalogos;
+﻿using Maquinaria.Aplicacion.Catalogos;
 using Maquinaria.Aplicacion.Comun;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Comun;
 using Maquinaria.Api.Seguridad;
 using Microsoft.AspNetCore.Authorization;
@@ -41,7 +42,12 @@ public sealed class ClausulasController(IServicioClausulas servicio) : Controlle
             ? Problem(
                 title: "No encontrado",
                 detail: "La clausula no existe.",
-                statusCode: StatusCodes.Status404NotFound)
+                statusCode: StatusCodes.Status404NotFound,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.NoEncontrado,
+                    ["entidad"] = "clausula",
+                })
             : Ok(clausula);
     }
 

@@ -1,5 +1,6 @@
-using Maquinaria.Aplicacion.Comun;
+﻿using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Cotizaciones;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Comun;
 using Maquinaria.Api.Seguridad;
 using Maquinaria.Dominio.Comercial;
@@ -43,7 +44,12 @@ public sealed class CotizacionesController(IServicioCotizaciones servicio) : Con
             ? Problem(
                 title: "No encontrado",
                 detail: "La cotizacion no existe.",
-                statusCode: StatusCodes.Status404NotFound)
+                statusCode: StatusCodes.Status404NotFound,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.NoEncontrado,
+                    ["entidad"] = "cotizacion",
+                })
             : Ok(cotizacion);
     }
 

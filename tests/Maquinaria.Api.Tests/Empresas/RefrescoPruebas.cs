@@ -354,12 +354,14 @@ public class RefrescoPruebas
 
     private static async Task<SesionEmpresa> Entrar(IniciarSesionEmpresa caso)
     {
-        var sesion = await caso.EjecutarAsync(
+        var resultado = await caso.EjecutarAsync(
             "bajio", new PeticionSesionEmpresa(Correo, Contrasena), null, null, default);
 
-        Assert.NotNull(sesion);
+        // Ni rechazo ni servicio detenido: aqui se entra de verdad.
+        Assert.Null(resultado.ServicioDetenido);
+        Assert.NotNull(resultado.Sesion);
 
-        return sesion!.Value;
+        return resultado.Sesion!.Value;
     }
 
     private static (IniciarSesionEmpresa Caso, UsuariosFalsos Repo, ProveedorFalso Proveedor) Armar(

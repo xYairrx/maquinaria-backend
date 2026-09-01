@@ -1,6 +1,7 @@
-using Maquinaria.Aplicacion.Comun;
+﻿using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Equipos;
 using Maquinaria.Aplicacion.Procesos.Equipos;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Comun;
 using Maquinaria.Api.Seguridad;
 using Maquinaria.Dominio.Activos;
@@ -57,7 +58,11 @@ public sealed class EquipoDocumentosController(
             return Problem(
                 title: "Peticion rechazada",
                 detail: "El archivo viene vacio.",
-                statusCode: StatusCodes.Status400BadRequest);
+                statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.ArchivoVacio,
+                });
         }
 
         await using var contenido = archivo.OpenReadStream();

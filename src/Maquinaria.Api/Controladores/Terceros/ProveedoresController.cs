@@ -1,5 +1,6 @@
-using Maquinaria.Aplicacion.Comun;
+﻿using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Terceros;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Comun;
 using Maquinaria.Api.Controladores.Catalogos;
 using Maquinaria.Api.Seguridad;
@@ -35,7 +36,12 @@ public sealed class ProveedoresController(IServicioProveedores servicio) : Contr
             ? Problem(
                 title: "No encontrado",
                 detail: "El proveedor no existe.",
-                statusCode: StatusCodes.Status404NotFound)
+                statusCode: StatusCodes.Status404NotFound,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.NoEncontrado,
+                    ["entidad"] = "proveedor",
+                })
             : Ok(proveedor);
     }
 

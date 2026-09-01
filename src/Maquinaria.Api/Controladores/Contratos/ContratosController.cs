@@ -1,5 +1,6 @@
-using Maquinaria.Aplicacion.Comun;
+﻿using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Contratos;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Comun;
 using Maquinaria.Api.Seguridad;
 using Maquinaria.Dominio.Comercial;
@@ -46,7 +47,12 @@ public sealed class ContratosController(IServicioContratos servicio) : Controlle
             ? Problem(
                 title: "No encontrado",
                 detail: "El contrato no existe.",
-                statusCode: StatusCodes.Status404NotFound)
+                statusCode: StatusCodes.Status404NotFound,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.NoEncontrado,
+                    ["entidad"] = "contrato",
+                })
             : Ok(contrato);
     }
 
@@ -64,7 +70,12 @@ public sealed class ContratosController(IServicioContratos servicio) : Controlle
             ? Problem(
                 title: "No encontrado",
                 detail: "Esa renta no tiene contrato.",
-                statusCode: StatusCodes.Status404NotFound)
+                statusCode: StatusCodes.Status404NotFound,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.NoEncontrado,
+                    ["entidad"] = "contrato_de_renta",
+                })
             : Ok(contrato);
     }
 

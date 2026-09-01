@@ -1,5 +1,6 @@
-using Maquinaria.Aplicacion.Catalogos;
+﻿using Maquinaria.Aplicacion.Catalogos;
 using Maquinaria.Aplicacion.Comun;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Comun;
 using Maquinaria.Api.Seguridad;
 using Microsoft.AspNetCore.Authorization;
@@ -39,7 +40,12 @@ public sealed class MarcasController(IServicioMarcas servicio) : ControllerBase
             ? Problem(
                 title: "No encontrado",
                 detail: "La marca no existe.",
-                statusCode: StatusCodes.Status404NotFound)
+                statusCode: StatusCodes.Status404NotFound,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.NoEncontrado,
+                    ["entidad"] = "marca",
+                })
             : Ok(marca);
     }
 

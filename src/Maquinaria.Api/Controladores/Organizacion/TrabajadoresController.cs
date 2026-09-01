@@ -1,5 +1,6 @@
-using Maquinaria.Aplicacion.Comun;
+﻿using Maquinaria.Aplicacion.Comun;
 using Maquinaria.Aplicacion.Organizacion;
+using Maquinaria.Api.Errores;
 using Maquinaria.Api.Comun;
 using Maquinaria.Api.Seguridad;
 using Microsoft.AspNetCore.Authorization;
@@ -41,7 +42,12 @@ public sealed class TrabajadoresController(IServicioTrabajadores servicio) : Con
             ? Problem(
                 title: "No encontrado",
                 detail: "El trabajador no existe.",
-                statusCode: StatusCodes.Status404NotFound)
+                statusCode: StatusCodes.Status404NotFound,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["codigo"] = CodigosProblema.NoEncontrado,
+                    ["entidad"] = "trabajador",
+                })
             : Ok(trabajador);
     }
 

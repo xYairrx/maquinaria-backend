@@ -1,4 +1,4 @@
-using Maquinaria.Aplicacion.Plataforma;
+﻿using Maquinaria.Aplicacion.Plataforma;
 using Maquinaria.Aplicacion.Seguridad;
 using Maquinaria.Dominio.Seguridad;
 using Microsoft.Extensions.Logging;
@@ -38,7 +38,7 @@ public sealed class Restablecimientos(
     /// </summary>
     public async Task<bool> EsUsableAsync(string slug, string tokenEnClaro, CancellationToken ct)
     {
-        if (!contextoTenant.EstaResuelto)
+        if (!contextoTenant.EstaResuelto || !contextoTenant.Actual.PuedeOperar)
         {
             return false;
         }
@@ -66,7 +66,7 @@ public sealed class Restablecimientos(
             return ResultadoAceptacion.Rechazado(PoliticaContrasena.Explicacion);
         }
 
-        if (!contextoTenant.EstaResuelto)
+        if (!contextoTenant.EstaResuelto || !contextoTenant.Actual.PuedeOperar)
         {
             return ResultadoAceptacion.Rechazado(MotivoUniforme);
         }

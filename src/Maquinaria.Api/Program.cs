@@ -229,6 +229,10 @@ app.UseRateLimiter();
 
 app.UseAuthentication();
 
+// Antes de la resolucion de tenant: el login de empresa escribe sesion_refresh en ese
+// mismo camino, asi que el actor tiene que estar puesto antes de que nada guarde.
+app.UsarContextoDeAuditoria();
+
 // Despues de autenticar —necesita los claims validados— y antes de cualquier cosa que
 // abra la base de una empresa.
 app.UsarResolucionDeTenant();

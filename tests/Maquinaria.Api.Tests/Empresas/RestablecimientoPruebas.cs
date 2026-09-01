@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Maquinaria.Aplicacion.Correo;
 using Maquinaria.Aplicacion.Empresas;
 using Maquinaria.Aplicacion.Plataforma;
@@ -484,7 +484,8 @@ public class RestablecimientoPruebas
         public Task<IReadOnlyList<string>> PermisosDeAsync(Guid usuarioId, CancellationToken ct)
             => throw new NotSupportedException();
 
-        public Task<bool> TieneAccesoTotalAsync(Guid usuarioId, CancellationToken ct)
+        public Task<IReadOnlyList<RolEfectivo>> RolesDeAsync(
+            Guid usuarioId, CancellationToken ct)
             => throw new NotSupportedException();
 
         public Task RegistrarAccesoAsync(

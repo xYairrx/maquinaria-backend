@@ -148,7 +148,7 @@ public sealed class IniciarSesionEmpresa(
 
         await Usuarios.RegistrarAccesoAsync(usuario.Id, DateTime.UtcNow, hashNuevo, ct);
 
-        var (accesoTotal, permisos) = await ResolverCompuertaAsync(usuario, tenant, ct);
+        var (accesoTotal, permisos, roles) = await ResolverCompuertaAsync(usuario, tenant, ct);
 
         // ---------- sesion de refresco ----------
         var refresco = tokens.Generar();
@@ -158,7 +158,7 @@ public sealed class IniciarSesionEmpresa(
 
         log.LogInformation("{Correo} inicio sesion en {Slug}.", correo, slug);
 
-        return Emitir(usuario, tenant, accesoTotal, permisos, refresco.EnClaro);
+        return Emitir(usuario, tenant, accesoTotal, permisos, roles, refresco.EnClaro);
     }
 
     /// <summary>
@@ -268,7 +268,7 @@ public sealed class IniciarSesionEmpresa(
             return null;
         }
 
-        var (accesoTotal, permisos) = await ResolverCompuertaAsync(usuario, tenant, ct);
+        var (accesoTotal, permisos, roles) = await ResolverCompuertaAsync(usuario, tenant, ct);
 
         var refresco = tokens.Generar();
 
@@ -280,7 +280,7 @@ public sealed class IniciarSesionEmpresa(
 
         log.LogInformation("{Correo} refresco su sesion en {Slug}.", usuario.Correo, slug);
 
-        return Emitir(usuario, tenant, accesoTotal, permisos, refresco.EnClaro);
+        return Emitir(usuario, tenant, accesoTotal, permisos, roles, refresco.EnClaro);
     }
 
     /// <summary>
@@ -290,14 +290,21 @@ public sealed class IniciarSesionEmpresa(
     /// el dia que se ajuste una se quedaria la otra atras, y "atras" aqui significa
     /// entregar permisos sobre modulos que la empresa no contrato.
     /// </summary>
-    private async Task<(bool AccesoTotal, IReadOnlyList<string> Permisos)> ResolverCompuertaAsync(
+    private async Task<(bool AccesoTotal, IReadOnlyList<string> Permisos,
+        IReadOnlyList<string> Roles)> ResolverCompuertaAsync(
         Usuario usuario, TenantResuelto tenant, CancellationToken ct)
     {
-        var accesoTotal = await Usuarios.TieneAccesoTotalAsync(usuario.Id, ct);
+        var suyos = await Usuarios.RolesDeAsync(usuario.Id, ct);
 
-        if (accesoTotal)
+        // Ordenados para que el claim del token sea estable entre dos logins iguales.
+        var roles = suyos
+            .Select(r => r.Codigo)
+            .OrderBy(c => c, StringComparer.Ordinal)
+            .ToList();
+
+        if (suyos.Any(r => r.AccesoTotal))
         {
-            return (true, []);
+            return (true, [], roles);
         }
 
         var delRol = await Usuarios.PermisosDeAsync(usuario.Id, ct);
@@ -313,7 +320,7 @@ public sealed class IniciarSesionEmpresa(
             "{Correo}: {Efectivos} permisos efectivos de {Totales} del rol.",
             usuario.Correo, permisos.Count, delRol.Count);
 
-        return (false, permisos);
+        return (false, permisos, roles);
     }
 
     /// <summary>
@@ -338,11 +345,12 @@ public sealed class IniciarSesionEmpresa(
     /// </summary>
     private SesionEmpresa Emitir(
         Usuario usuario, TenantResuelto tenant, bool accesoTotal,
-        IReadOnlyList<string> permisos, string tokenRefrescoEnClaro)
+        IReadOnlyList<string> permisos, IReadOnlyList<string> roles,
+        string tokenRefrescoEnClaro)
     {
         var emitido = proveedor.EmitirDeEmpresa(
             usuario.Id, usuario.Correo, usuario.Nombre, tenant.Id, tenant.Slug,
-            accesoTotal, permisos);
+            accesoTotal, permisos, roles);
 
         return new SesionEmpresa(
             emitido.Token, emitido.ExpiraEn, tokenRefrescoEnClaro,

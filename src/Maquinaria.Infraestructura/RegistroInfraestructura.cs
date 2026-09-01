@@ -51,12 +51,25 @@ public static class RegistroInfraestructura
     public static IServiceCollection AgregarInfraestructura(
         this IServiceCollection servicios, IConfiguration configuracion)
     {
+        // ------------------------------------------------------------------
+        // Auditoria
+        // ------------------------------------------------------------------
+        // De ambito de peticion los dos, y el orden importa: el portador se registra
+        // antes que los contextos porque el interceptor lo recibe por constructor.
+        //
+        // El interceptor se registra UNA VEZ y se enchufa a los DOS contextos: la tabla
+        // auditoria esta configurada igual en ambos.
+        servicios.AddScoped<IContextoAuditoria, ContextoAuditoria>();
+        servicios.AddScoped<InterceptorAuditoria>();
+
         // Cadena POOLED: es el runtime. Las migraciones usan la directa, via
         // FabricaContextoCentral.
-        servicios.AddDbContext<ContextoCentral>(opciones =>
-            opciones.UsarPostgres(
-                configuracion.GetConnectionString("Central")
-                ?? throw new InvalidOperationException("Falta ConnectionStrings:Central.")));
+        servicios.AddDbContext<ContextoCentral>((sp, opciones) =>
+            opciones
+                .UsarPostgres(
+                    configuracion.GetConnectionString("Central")
+                    ?? throw new InvalidOperationException("Falta ConnectionStrings:Central."))
+                .AddInterceptors(sp.GetRequiredService<InterceptorAuditoria>()));
 
         // EL LARGO DE LA LLAVE SE VALIDA AQUI Y NO SOLO EN EL CONSTRUCTOR DE
         // ProveedorTokensJwt. La comprobacion del constructor sigue puesta —es la que
@@ -115,7 +128,9 @@ public static class RegistroInfraestructura
             var tenant = sp.GetRequiredService<IContextoTenant>().Actual;
             var fabrica = sp.GetRequiredService<FabricaConexionesEmpresa>();
 
-            opciones.UsarPostgres(fabrica.CadenaDeAplicacion(tenant.NombreBd));
+            opciones
+                .UsarPostgres(fabrica.CadenaDeAplicacion(tenant.NombreBd))
+                .AddInterceptors(sp.GetRequiredService<InterceptorAuditoria>());
         });
 
         // ------------------------------------------------------------------

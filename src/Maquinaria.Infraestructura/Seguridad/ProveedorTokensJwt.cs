@@ -33,6 +33,18 @@ public sealed class ProveedorTokensJwt : IProveedorTokens
     /// </summary>
     public const string ClaimPermisos = "perm";
 
+    /// <summary>
+    /// Los CODIGOS de los roles, separados por espacios, con el mismo formato que
+    /// <see cref="ClaimPermisos"/>.
+    ///
+    /// No autoriza nada —eso lo siguen haciendo los permisos y acceso_total— y existe
+    /// solo para la auditoria: es lo que permite preguntarle a la bitacora si una accion
+    /// paso por el bypass de acceso_total o por un permiso concedido. Van aqui y no se
+    /// consultan por peticion porque los roles que importan son los que autorizaron ESTA
+    /// peticion, y esos son los del momento de emitir el token, igual que los permisos.
+    /// </summary>
+    public const string ClaimRoles = "roles";
+
     private readonly OpcionesJwt _opciones;
     private readonly SigningCredentials _credenciales;
 
@@ -94,7 +106,8 @@ public sealed class ProveedorTokensJwt : IProveedorTokens
         Guid tenantId,
         string slug,
         bool accesoTotal,
-        IReadOnlyList<string> permisos)
+        IReadOnlyList<string> permisos,
+        IReadOnlyList<string> roles)
     {
         var ahora = DateTime.UtcNow;
         var expira = ahora.AddMinutes(_opciones.MinutosEmpresa);
@@ -110,6 +123,14 @@ public sealed class ProveedorTokensJwt : IProveedorTokens
             [ClaimTenant] = tenantId.ToString(),
             [ClaimEmpresa] = slug,
         };
+
+        // Aunque haya acceso_total. Ahi es donde MAS importa saber cual de los roles
+        // trajo el bypass: es la unica forma de responderlo despues, porque los roles y
+        // rol_permiso cambian.
+        if (roles.Count > 0)
+        {
+            claims[ClaimRoles] = string.Join(' ', roles);
+        }
 
         if (accesoTotal)
         {

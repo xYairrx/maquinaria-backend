@@ -132,11 +132,16 @@ internal sealed class UsuariosEmpresaEf(ContextoEmpresa empresa) : IUsuariosEmpr
             .Distinct()
             .ToListAsync(ct);
 
-    public Task<bool> TieneAccesoTotalAsync(Guid usuarioId, CancellationToken ct)
-        => empresa.UsuarioRoles
+    public async Task<IReadOnlyList<RolEfectivo>> RolesDeAsync(
+        Guid usuarioId, CancellationToken ct)
+        => await empresa.UsuarioRoles
             .Where(ur => ur.UsuarioId == usuarioId)
-            .Join(empresa.Roles, ur => ur.RolId, r => r.Id, (ur, r) => r)
-            .AnyAsync(r => r.AccesoTotal, ct);
+            .Join(
+                empresa.Roles,
+                ur => ur.RolId,
+                r => r.Id,
+                (ur, r) => new RolEfectivo(r.Codigo, r.AccesoTotal))
+            .ToListAsync(ct);
 
     public async Task RegistrarAccesoAsync(
         Guid usuarioId, DateTime cuandoUtc, string? hashNuevo, CancellationToken ct)

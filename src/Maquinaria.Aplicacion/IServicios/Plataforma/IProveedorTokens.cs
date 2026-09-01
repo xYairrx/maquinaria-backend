@@ -30,6 +30,11 @@ public interface IProveedorTokens
     /// Cuando es true, <paramref name="permisos"/> se ignora y no se enumera nada: un
     /// solo claim en lugar de 156.
     /// </param>
+    /// <param name="roles">
+    /// Los codigos de sus roles. NO autorizan nada: viajan para que la auditoria pueda
+    /// registrar bajo que roles se actuo, incluido cuando <paramref name="accesoTotal"/>
+    /// es true, que es donde mas importa.
+    /// </param>
     TokenEmitido EmitirDeEmpresa(
         Guid usuarioId,
         string correo,
@@ -37,7 +42,8 @@ public interface IProveedorTokens
         Guid tenantId,
         string slug,
         bool accesoTotal,
-        IReadOnlyList<string> permisos);
+        IReadOnlyList<string> permisos,
+        IReadOnlyList<string> roles);
 }
 
 /// <param name="Token">El JWT compacto.</param>

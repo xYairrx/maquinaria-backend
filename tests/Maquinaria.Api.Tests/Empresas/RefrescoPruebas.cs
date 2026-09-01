@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Maquinaria.Aplicacion.Empresas;
 using Maquinaria.Aplicacion.Plataforma;
 using Maquinaria.Aplicacion.Seguridad;
@@ -419,8 +419,10 @@ public class RefrescoPruebas
         public Task<IReadOnlyList<string>> PermisosDeAsync(Guid usuarioId, CancellationToken ct)
             => Task.FromResult(PermisosDelRol);
 
-        public Task<bool> TieneAccesoTotalAsync(Guid usuarioId, CancellationToken ct)
-            => Task.FromResult(AccesoTotal);
+        public Task<IReadOnlyList<RolEfectivo>> RolesDeAsync(
+            Guid usuarioId, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<RolEfectivo>>(
+                [new RolEfectivo("operador", AccesoTotal)]);
 
         public Task RegistrarAccesoAsync(
             Guid usuarioId, DateTime cuandoUtc, string? hashNuevo, CancellationToken ct)
@@ -493,11 +495,14 @@ public class RefrescoPruebas
     {
         public IReadOnlyList<string> UltimosPermisos { get; private set; } = [];
 
+        public IReadOnlyList<string> UltimosRoles { get; private set; } = [];
+
         public TokenEmitido EmitirDeEmpresa(
             Guid usuarioId, string correo, string nombre, Guid tenantId, string slug,
-            bool accesoTotal, IReadOnlyList<string> permisos)
+            bool accesoTotal, IReadOnlyList<string> permisos, IReadOnlyList<string> roles)
         {
             UltimosPermisos = permisos;
+            UltimosRoles = roles;
 
             return new TokenEmitido($"jwt-de-{correo}", DateTime.UtcNow.AddMinutes(15));
         }

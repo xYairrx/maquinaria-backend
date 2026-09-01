@@ -1,6 +1,100 @@
 ﻿# Estado y pendientes
 
-Última verificación: 2026-08-27.
+Última verificación: 2026-09-01.
+
+## El interceptor de auditoría, escrito — 2026-09-01
+
+**Era la última pieza transversal de la Fase 0 y ya no falta.** Las dos tablas `auditoria`
+dejan de estar vacías: toda entidad creada, modificada o borrada a través de `SaveChanges`
+—en la central y en la de cada empresa— escribe su fila en el MISMO guardado, así que
+comparte transacción con el cambio que la origina.
+
+Cinco piezas, ninguna grande:
+
+| Pieza | Dónde | Qué hace |
+|---|---|---|
+| `IContextoAuditoria` | `Aplicacion/IServicios/Comun/` | Portador de ámbito de petición: quién actúa, con qué roles, desde qué IP |
+| `ContextoAuditoria` | `Infraestructura/Servicios/Comun/` | Su implementación. Genera el `correlacion_id` al construir el ámbito |
+| `InterceptorAuditoria` | `Infraestructura/Persistencia/` | El `SaveChangesInterceptor`. Recorre el `ChangeTracker` y arma las filas |
+| `MiddlewareAuditoria` | `Api/Seguridad/` | Llena el portador con los claims ya validados |
+| Claim `roles` | `ProveedorTokensJwt` | Ver abajo: era el único de los cuatro datos que no existía |
+
+### El portador, y no `IHttpContextAccessor`
+
+`Maquinaria.Infraestructura` es una biblioteca normal, sin el framework de ASP.NET, y el
+interceptor vive ahí. El portador de ámbito de petición —el mismo patrón que
+`IContextoTenant`— es lo que permite que el interceptor no sepa nada de HTTP.
+
+Y tiene un segundo beneficio que no se buscaba: `migrar-empresas` no tiene petición
+detrás, nadie establece el portador, y sus escrituras salen con origen `sistema` sin que
+haya que inventarle una petición falsa. A diferencia de `ContextoTenant`, este **no lanza**
+cuando nadie lo estableció, justamente por eso.
+
+### El `origen` lo decide el interceptor, no el middleware
+
+Porque depende de contra qué base se escribe: un superadministrador es `plataforma` cuando
+actúa dentro de la base de una empresa —ahí su `usuario_id` no resuelve, y eso es lo que el
+origen desambigua— y `api` cuando actúa en la central, donde sí resuelve. El middleware solo
+anota si el ámbito del token es de plataforma.
+
+### El claim `roles`: el cuarto dato NO existía
+
+La entrada del 2026-08-24 decía que con la auth de empresa cerrada existían los cuatro datos
+—`usuario_id`, `roles`, `ip` y `origen`—. **Eran tres.** El JWT lleva `perm` y `acceso_total`,
+pero nunca llevó los roles, así que la columna que la propia entidad declara obligatoria
+—«`'administrador' = ANY(roles)` responde si la acción pasó por el bypass»— no tenía de dónde
+salir.
+
+Se agregó el claim, con el mismo formato que `perm` y **también cuando hay `acceso_total`**,
+que es donde más importa saber cuál rol trajo el bypass. No autoriza nada.
+
+De paso, `TieneAccesoTotalAsync` **desapareció**: se volvió `RolesDeAsync`, que cuesta la
+misma consulta y devuelve los códigos además del bool. El único llamador era la compuerta de
+`IniciarSesionEmpresa`, que la comparten el login y el refresco.
+
+El claim es interno del token: el frontend no lo decodifica —lee la sesión del cuerpo de la
+respuesta—, así que **este cambio no le pide nada**.
+
+### La lista de exclusión, por nombre de propiedad
+
+`HashContrasena` y `HashToken` nunca entran al `jsonb`. Por NOMBRE y no por par
+entidad-propiedad: cubre de una vez `usuario.hash_contrasena`, `token_acceso.hash_token` y
+`sesion_refresh.hash_token`, y —lo que importa más— cubre también la próxima entidad que
+nazca con un campo que se llame igual, sin que nadie tenga que acordarse de ampliar la lista.
+
+Es la única parte con consecuencia de seguridad y por eso es la que tiene prueba propia: si
+se rompe, los hashes acaban en la tabla que nunca se borra y no hay error ni pantalla que lo
+delate.
+
+### El techo conocido: `ExecuteUpdateAsync` NO se audita
+
+Un interceptor de `SaveChanges` no las ve. `ExecuteUpdateAsync` y `ExecuteDeleteAsync` van
+directas a SQL sin tocar el `ChangeTracker`, así que **ninguna de sus 18 llamadas queda
+registrada**. Están todas en caminos de Fase 0 —auth, aprovisionamiento, catálogo de planes—;
+entre ellas `RegistrarAccesoAsync`, que es la que sella el último acceso al iniciar sesión.
+
+Si alguna de esas escrituras tiene que quedar registrada, el camino es cambiar ESA llamada a
+seguimiento normal, no ensanchar el interceptor. Queda marcado con un comentario `ponytail:`
+en la clase.
+
+### Lo que está comprobado, y lo que no
+
+`dotnet build` en **0 errores y 0 advertencias**, y `dotnet test` en **345 pruebas, 0 fallos**
+—las 339 de antes más 6 nuevas—. Las seis cubren el alta con su llave y su actor, la
+exclusión del hash, que un cambio registre solo lo que cambió, que un cambio que solo toca un
+campo excluido no deje fila, el origen `sistema` sin actor y el origen `plataforma` dentro de
+una empresa.
+
+**Corren sin base de datos**, con el mismo truco que las pruebas de traducción: el
+`ChangeTracker` no abre conexión, así que basta un contexto apuntado a un puerto muerto.
+
+Y ahí está lo que **NO** está demostrado: ninguna fila de `auditoria` se ha escrito todavía
+contra Postgres. Falta el recorrido de punta a punta con la API corriendo —dar de alta algo
+desde la pantalla y ver la fila en la base—, que es lo único que comprueba que el `jsonb`, el
+`text[]` y el `inet` viajan como se espera y que el trigger `auditoria_inmutable` no estorba
+al `INSERT`.
+
+---
 
 ## `contrato_inmutable` deja dos estados INALCANZABLES — 2026-08-28
 
@@ -340,9 +434,9 @@ sobre `lower(nombre)`— está en §6 del plan.
 
 ### Lo que falta de la fase
 
-1. **El interceptor de auditoría.** Las dos tablas `auditoria` siguen vacías: nada de lo que
-   hacen los 136 endpoints queda auditado. Es la última pieza transversal.
-2. **Las pruebas contra Postgres real.** Las 338 son unitarias y **ninguna toca la base**. Lo que
+1. ~~**El interceptor de auditoría.**~~ **Escrito el 2026-09-01.** Falta verlo escribir una
+   fila contra Postgres: en disco está y con pruebas, contra la base no se ha ejercitado.
+2. **Las pruebas contra Postgres real.** Las 345 son unitarias y **ninguna toca la base**. Lo que
    falta probar es justo lo que el motor garantiza: el `EXCLUDE` de no-traslape bajo dos
    transacciones simultáneas, el trigger del contrato inmutable, los `UNIQUE`. Ningún doble lo
    reproduce, así que **el criterio de salida está escrito y no demostrado**.
@@ -404,7 +498,7 @@ ya conocida. `dotnet test` deja `Maquinaria.Api.Tests` en **205 pruebas, 0 fallo
 - [x] Las 3 tablas restantes de `ContextoEmpresa` —`parametro`, `archivo`, `auditoria`— con el trigger `auditoria_inmutable`, en `EmpresaAuditoriaYConfiguracion`
 - [x] `auditoria` **también en la base central** (`CentralAuditoria`), con su trigger. La misma entidad en los dos contextos
 - [x] Los 12 constraints de `auditoria` verificados contra **las dos** bases reales, y las 6 preguntas que la bitácora debe responder, comprobadas
-- [ ] El interceptor de auditoría: **ya no está bloqueado** (2026-08-24). Necesitaba `usuario_id`, `roles`, `ip` y `origen` del contexto de la petición autenticada, y con la auth de empresa cerrada esos cuatro existen. Queda por escribir
+- [x] El interceptor de auditoría (2026-09-01). De los cuatro datos que necesitaba —`usuario_id`, `roles`, `ip` y `origen`— **los roles no existían**: hubo que agregarles claim. Ver la sección de arriba, con el techo de `ExecuteUpdateAsync`
 - [x] **Servicio de aprovisionamiento**, con su endpoint `POST /api/plataforma/empresas`. Probado creando una empresa real de punta a punta
 - [x] Abstracción de correo `IEnviadorCorreo`, con `CorreoEnLog` para desarrollo y `CorreoResend` para la nube
 - [x] `GET /api/plataforma/empresas`: listado con estado de aprovisionamiento, plan y módulos. Usa subconsultas y no joins, para que un tenant **sin** suscripción aparezca con plan nulo en lugar de desaparecer — que son justo los que hay que ver

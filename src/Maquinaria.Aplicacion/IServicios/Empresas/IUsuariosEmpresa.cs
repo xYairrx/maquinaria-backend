@@ -78,8 +78,15 @@ public interface IUsuariosEmpresa
     /// </summary>
     Task<IReadOnlyList<string>> PermisosDeAsync(Guid usuarioId, CancellationToken ct);
 
-    /// <summary>Si alguno de sus roles trae acceso_total, salta la verificacion.</summary>
-    Task<bool> TieneAccesoTotalAsync(Guid usuarioId, CancellationToken ct);
+    /// <summary>
+    /// Los roles del usuario, con su codigo y si saltan la verificacion.
+    ///
+    /// SUSTITUYO a un TieneAccesoTotalAsync que devolvia solo el bool. Cuesta lo mismo
+    /// —una consulta— y de paso da los codigos, que la auditoria necesita: sin ellos,
+    /// la columna roles de la bitacora no puede responder si una accion paso por el
+    /// bypass de acceso_total o por un permiso concedido.
+    /// </summary>
+    Task<IReadOnlyList<RolEfectivo>> RolesDeAsync(Guid usuarioId, CancellationToken ct);
 
     Task RegistrarAccesoAsync(
         Guid usuarioId, DateTime cuandoUtc, string? hashNuevo, CancellationToken ct);
@@ -104,3 +111,9 @@ public interface IUsuariosEmpresa
 }
 
 public readonly record struct TokenConUsuario(TokenAcceso Token, Usuario Usuario);
+
+/// <param name="Codigo">
+/// El codigo del rol, no su id: es lo que se congela en la bitacora, que debe leerse
+/// sin joins a tablas que pudieron cambiar.
+/// </param>
+public readonly record struct RolEfectivo(string Codigo, bool AccesoTotal);

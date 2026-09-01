@@ -1,4 +1,4 @@
-using Maquinaria.Aplicacion.Correo;
+﻿using Maquinaria.Aplicacion.Correo;
 using Maquinaria.Aplicacion.Empresas;
 using Maquinaria.Dominio.Plataforma;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -238,6 +238,10 @@ public class ReenvioInvitacionPruebas
             => throw new NotSupportedException();
 
         public Task CrearAsync(Tenant nuevo, Suscripcion suscripcion, CancellationToken ct)
+            => throw new NotSupportedException();
+
+        public Task<ResumenEmpresa?> CambiarEstadoAsync(
+            string slug, EstadoTenant estado, CancellationToken ct)
             => throw new NotSupportedException();
 
         public Task CambiarEstadoAprovisionamientoAsync(

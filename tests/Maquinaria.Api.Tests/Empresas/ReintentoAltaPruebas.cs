@@ -235,6 +235,10 @@ public class ReintentoAltaPruebas
         public Task<Tenant?> BuscarPorSlugAsync(string slug, CancellationToken ct)
             => Task.FromResult(tenant?.Slug == slug ? tenant : null);
 
+        public Task<ResumenEmpresa?> CambiarEstadoAsync(
+            string slug, EstadoTenant estado, CancellationToken ct)
+            => throw new NotSupportedException();
+
         public Task CambiarEstadoAprovisionamientoAsync(
             Guid tenantId, EstadoAprovisionamiento estado, CancellationToken ct)
         {

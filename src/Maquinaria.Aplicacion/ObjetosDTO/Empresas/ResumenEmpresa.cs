@@ -34,3 +34,13 @@ public sealed record ResumenEmpresa(
     /// </summary>
     bool InvitacionEnviada,
     DateTime CreadoEn);
+
+/// <summary>
+/// El cuerpo del PATCH que mueve la situacion comercial de una empresa.
+///
+/// Un objeto y no el enum suelto, por lo mismo que <c>CambioDeActivo</c>: la peticion se
+/// lee sola en un log y se le pueden agregar campos —un motivo, una fecha— sin cambiar la
+/// firma. Y aqui eso no es hipotetico: suspender a un cliente es la clase de decision de
+/// la que alguien va a querer saber el porque.
+/// </summary>
+public readonly record struct CambioDeEstadoEmpresa(EstadoTenant Estado);

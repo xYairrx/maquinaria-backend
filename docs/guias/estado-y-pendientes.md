@@ -2,6 +2,68 @@
 
 Última verificación: 2026-09-01.
 
+## Los estados de una empresa ya se pueden mover — 2026-09-01
+
+Salió de una pregunta: «¿por qué todas las empresas dicen Prueba?». Porque **nada podía
+sacarlas de ahí**.
+
+`AprovisionarEmpresa` fijaba `Estado = EstadoTenant.Prueba` y ninguna otra línea del backend
+volvía a escribir esa columna. Lo único que se movía era `EstadoAprovisionamiento`, que
+cuenta otra cosa. Resultado: **tres de los cuatro valores del enum inalcanzables** —`Activo`,
+`Suspendido`, `Cancelado`—, el mismo defecto que el trigger del contrato.
+
+Y no era solo cosmético. `MiddlewareTenant` comprueba `PuedeOperar` en CADA petición, con un
+comentario que dice para qué: «suspender a un cliente tiene que surtir efecto sin esperar a
+que caduquen los tokens que ya emitió». Esa comprobación **no podía fallar nunca**, porque
+`Prueba` siempre puede operar. Estaba escrita para hacer cumplir una capacidad que no existía.
+
+### El endpoint
+
+```
+PATCH /api/plataforma/empresas/{slug}/estado    { "estado": 1|2|3|4 }
+```
+
+Devuelve el `ResumenEmpresa` ya actualizado —la misma forma exacta que la fila del listado—
+para que el panel se repinte de la respuesta.
+
+Tres decisiones:
+
+- **`SaveChanges` con seguimiento, no `ExecuteUpdateAsync`** como sus vecinas del mismo
+  archivo. Suspender a un cliente es justo lo que la bitácora tiene que registrar, y el
+  interceptor solo ve lo que pasa por ahí. Las de aprovisionamiento se quedan como estaban
+  porque las mueve el sistema, no una persona.
+- **Un PATCH repetido es un no-op de verdad.** Si el estado ya era ese, EF no marca la
+  entidad como modificada y el interceptor no escribe nada — en vez de una fila que dice que
+  no cambió nada.
+- **El enum se valida con `Enum.IsDefined`.** `System.Text.Json` mete cualquier número en un
+  enum sin quejarse, incluidos el 0 y el 99; sin la guarda, `{"estado": 0}` llegaría al UPDATE
+  y reventaría contra el CHECK como un **500**, cuando es dato mal capturado y es un 400.
+
+### Las pruebas
+
+13 nuevas. La que justifica el endpoint es que **suspendido y cancelado NO pueden operar**:
+si eso deja de ser cierto, suspender no corta nada y el panel promete algo que no pasa. Y que
+los estados son exactamente cuatro del 1 al 4, que es lo que el CHECK impone — un quinto valor
+en el enum sin migrar el CHECK sería una fila que la aplicación acepta y el motor rechaza.
+
+**Lo que NO cubren:** la guarda del endpoint. Construir `EmpresasController` arrastra
+`AprovisionarEmpresa` y `ReenviarInvitacion` con sus dependencias, y montar eso para
+comprobar un `Enum.IsDefined` cuesta más que lo que fija. Lo que sí queda fijado es el
+supuesto del que esa guarda depende.
+
+**448 pruebas, 0 fallos.**
+
+### Dos decisiones abiertas
+
+- **¿`Cancelado` es terminal?** El enum lo llama «baja definitiva», y hoy se permite volver de
+  ahí a cualquier otro estado. Prohibirlo es defendible; convierte un clic mal dado en algo
+  irreversible desde el panel. No se decidió.
+- **`Tenant.EliminadoEn` se lee en cuatro sitios y no se escribe en ninguno.** Es otro estado
+  inalcanzable, en otra columna: la baja lógica. `migrar-empresas` y `DirectorioTenantsEf`
+  filtran por ella. Misma familia, fuera del alcance de esta rebanada.
+
+---
+
 ## El ámbito cruzado ya tiene pruebas — 2026-09-01
 
 Salió de un reporte que parecía grave y no lo era: estando dentro del panel como

@@ -3,7 +3,8 @@
 namespace Maquinaria.Aplicacion.Empresas;
 
 /// <summary>
-/// Escrituras sobre la base central que necesita el aprovisionamiento.
+/// Escrituras sobre la base central: las del aprovisionamiento y las que mueven la
+/// situacion comercial de una empresa.
 /// </summary>
 public interface IRegistroTenants
 {
@@ -22,6 +23,23 @@ public interface IRegistroTenants
 
     Task CambiarEstadoAprovisionamientoAsync(
         Guid tenantId, EstadoAprovisionamiento estado, CancellationToken ct);
+
+    /// <summary>
+    /// Mueve la SITUACION COMERCIAL de una empresa: prueba, activa, suspendida, cancelada.
+    ///
+    /// NO ES EstadoAprovisionamiento, que cuenta otra cosa —si su base se creo bien— y se
+    /// mueve solo. Este lo decide una persona.
+    ///
+    /// Hasta el 2026-09-01 no existia, y eso dejaba TRES DE LOS CUATRO valores del enum
+    /// inalcanzables: toda empresa nacia en Prueba y nada volvia a escribir la columna. De
+    /// paso dejaba sin poder ejercerse la comprobacion de `PuedeOperar` que
+    /// `MiddlewareTenant` hace en CADA peticion, escrita expresamente para que suspender a
+    /// un cliente surta efecto sin esperar a que caduquen sus tokens.
+    ///
+    /// Devuelve el resumen ya actualizado, o `null` si el slug no existe.
+    /// </summary>
+    Task<ResumenEmpresa?> CambiarEstadoAsync(
+        string slug, EstadoTenant estado, CancellationToken ct);
 
     Task MarcarListaAsync(Guid tenantId, string versionEsquema, CancellationToken ct);
 

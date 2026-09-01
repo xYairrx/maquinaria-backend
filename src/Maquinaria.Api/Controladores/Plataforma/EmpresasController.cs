@@ -1,4 +1,4 @@
-using Maquinaria.Aplicacion.Empresas;
+﻿using Maquinaria.Aplicacion.Empresas;
 using Maquinaria.Api.Seguridad;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -72,6 +72,39 @@ public sealed class EmpresasController(
     /// ningun recurso nuevo. El cuerpo es el mismo <see cref="EmpresaAprovisionada"/> del
     /// alta, porque lo que el panel necesita mostrar es lo mismo.
     /// </summary>
+    [HttpPatch("{slug}/estado")]
+    [EndpointName("CambiarEstadoEmpresa")]
+    [EndpointSummary(
+        "Mueve la situacion comercial: prueba, activa, suspendida o cancelada. "
+        + "Suspender corta el acceso en la SIGUIENTE peticion de sus usuarios.")]
+    [ProducesResponseType<ResumenEmpresa>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CambiarEstadoAsync(
+        string slug, CambioDeEstadoEmpresa cambio, CancellationToken ct)
+    {
+        // EL ENUM SE VALIDA A MANO, y no es paranoia: System.Text.Json mete CUALQUIER
+        // numero en un enum sin quejarse, incluidos el 0 y el 99. Sin esto, un cuerpo con
+        // `{"estado": 0}` llegaria hasta el INSERT y reventaria contra el CHECK de la base
+        // como un 500, cuando es dato mal capturado y es un 400.
+        if (!Enum.IsDefined(cambio.Estado))
+        {
+            return Problem(
+                title: "Estado no valido",
+                detail: "El estado debe ser 1 prueba, 2 activo, 3 suspendido o 4 cancelado.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var empresa = await registro.CambiarEstadoAsync(slug, cambio.Estado, ct);
+
+        return empresa is null
+            ? Problem(
+                title: "Empresa no encontrada",
+                detail: $"No existe una empresa con el slug '{slug}'.",
+                statusCode: StatusCodes.Status404NotFound)
+            : Ok(empresa);
+    }
+
     [HttpPost("{slug}/reintento")]
     [EndpointName("ReintentarAltaEmpresa")]
     [EndpointSummary("Reintenta un alta que quedo en Fallida. Solo desde ese estado.")]

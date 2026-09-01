@@ -36,6 +36,39 @@ internal sealed class RegistroTenantsEf(ContextoCentral central) : IRegistroTena
                       .SetProperty(t => t.ActualizadoEn, DateTime.UtcNow),
                 ct);
 
+    public async Task<ResumenEmpresa?> CambiarEstadoAsync(
+        string slug, EstadoTenant estado, CancellationToken ct)
+    {
+        // CON SEGUIMIENTO Y SaveChanges, no ExecuteUpdateAsync como sus vecinas de aqui
+        // abajo, y es deliberado: suspender o cancelar a un cliente es de las decisiones
+        // mas privilegiadas del sistema, y el interceptor de auditoria SOLO VE lo que pasa
+        // por SaveChanges. Con la version rapida el cambio no quedaria en ninguna bitacora.
+        //
+        // Las de aprovisionamiento se quedan como estan porque las mueve el sistema, no una
+        // persona, y su rastro es el log del alta.
+        var tenant = await central.Tenants.FirstOrDefaultAsync(t => t.Slug == slug, ct);
+
+        if (tenant is null)
+        {
+            return null;
+        }
+
+        // Si el estado ya era ese, EF no marca la entidad como modificada y el interceptor
+        // no escribe nada. Un PATCH repetido es un no-op de verdad, no una fila de bitacora
+        // que dice que no cambio nada.
+        tenant.Estado = estado;
+        tenant.ActualizadoEn = DateTime.UtcNow;
+
+        await central.SaveChangesAsync(ct);
+
+        // Se relee de la lista en lugar de armar el resumen a mano: asi la fila que recibe
+        // el panel es EXACTAMENTE la misma forma que le llega en el listado, con su plan y
+        // su conteo de modulos. Mismo criterio que CambiarActivoAsync con un plan.
+        var empresas = await ListarAsync(ct);
+
+        return empresas.FirstOrDefault(e => e.Slug == slug);
+    }
+
     public async Task MarcarListaAsync(Guid tenantId, string versionEsquema, CancellationToken ct)
         => await central.Tenants
             .Where(t => t.Id == tenantId)

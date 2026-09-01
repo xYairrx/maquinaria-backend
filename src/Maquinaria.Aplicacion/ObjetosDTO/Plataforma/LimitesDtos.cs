@@ -57,3 +57,77 @@ public readonly record struct ResultadoLimites(
 /// <c>CambioDeActivo</c>: la peticion se lee sola en un log.
 /// </summary>
 public readonly record struct FijarLimite(int Valor);
+
+/// <summary>
+/// Un tipo de limite del catalogo, como lo ve el panel.
+/// </summary>
+/// <param name="Reconocida">
+/// Si hay CODIGO detras de la clave. Es el dato que decide si esta fila sirve para algo:
+/// un tipo cuya clave no esta en <c>ClavesLimite</c> se puede crear, editar y fijar por
+/// empresa — y no va a acotar nada nunca. Va en el DTO para que la pantalla pueda decirlo,
+/// en lugar de dejar que alguien lo descubra el dia que el cupo no se respete.
+/// </param>
+/// <param name="Excepciones">
+/// Cuantas empresas tienen un cupo propio de este tipo. Es lo que convierte la lista en algo
+/// con lo que se puede decidir: retirar un tipo que veinte empresas tienen negociado no es
+/// lo mismo que retirar uno que no usa nadie. Mismo papel que <c>Suscripciones</c> en
+/// <see cref="ResumenPlan"/>.
+/// </param>
+public sealed record ResumenTipoLimite(
+    Guid Id,
+    string Clave,
+    string Nombre,
+    string Descripcion,
+    string Unidad,
+    int ValorDefecto,
+    int Orden,
+    bool Activo,
+    bool Reconocida,
+    int Excepciones);
+
+/// <summary>
+/// Lo que hace falta para crear un tipo de limite.
+/// </summary>
+/// <param name="Clave">
+/// Identificador estable, en minusculas con guiones bajos. NO SE PUEDE EDITAR despues, por
+/// lo mismo que el codigo de un plan: es lo que el codigo busca para aplicar el limite, asi
+/// que cambiarla desconectaria la fila de lo unico que la hace servir.
+/// </param>
+/// <param name="ValorDefecto">
+/// Lo que aplica a toda empresa que no tenga excepcion. <c>-1</c> es sin limite, y es el
+/// valor con el que conviene nacer: un tipo que nace en cero deja a TODAS las empresas sin
+/// poder crear ninguno, de golpe y sin que nadie lo haya pedido empresa por empresa.
+/// </param>
+public readonly record struct AltaTipoLimite(
+    string Clave,
+    string Nombre,
+    string? Descripcion,
+    string Unidad,
+    int ValorDefecto,
+    int Orden);
+
+/// <summary>
+/// Los campos editables de un tipo. La clave NO esta, a proposito.
+///
+/// Es un reemplazo completo de lo editable y no un parche campo a campo: con seis campos
+/// opcionales habria que distinguir "no lo mandaron" de "lo mandaron vacio", y el panel
+/// manda el formulario entero de todas formas.
+/// </summary>
+public readonly record struct CambioTipoLimite(
+    string Nombre,
+    string? Descripcion,
+    string Unidad,
+    int ValorDefecto,
+    int Orden,
+    bool Activo);
+
+/// <summary>Mismo criterio que <see cref="ResultadoPlan"/>: un rechazo por dato no es un fallo.</summary>
+public readonly record struct ResultadoTipoLimite(
+    bool Correcto,
+    string? Motivo,
+    ResumenTipoLimite? Tipo)
+{
+    public static ResultadoTipoLimite Exito(ResumenTipoLimite tipo) => new(true, null, tipo);
+
+    public static ResultadoTipoLimite Rechazado(string motivo) => new(false, motivo, null);
+}

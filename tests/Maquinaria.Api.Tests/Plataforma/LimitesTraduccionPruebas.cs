@@ -35,13 +35,23 @@ public class LimitesTraduccionPruebas
         => AssertTraduceYSoloFallaLaRed(
             () => Limites().QuitarAsync("bajio", "max_equipos", CancellationToken.None));
 
-    private static LimitesTenantEf Limites()
+    [Fact]
+    public Task El_catalogo_de_tipos_traduce_su_conteo_de_excepciones()
+        // Proyecta un `ResumenTipoLimite` con una subconsulta de conteo dentro. Lo que NO
+        // entra en el arbol es `EsReconocida`, que se resuelve con un `with` en memoria
+        // porque la lista de claves con codigo detras vive en el ensamblado.
+        => AssertTraduceYSoloFallaLaRed(
+            () => new CatalogoLimitesEf(Contexto()).ListarAsync(CancellationToken.None));
+
+    private static ContextoCentral Contexto()
     {
         var opciones = new DbContextOptionsBuilder<ContextoCentral>();
         opciones.UsarPostgres(CadenaMuerta);
 
-        return new LimitesTenantEf(new ContextoCentral(opciones.Options));
+        return new ContextoCentral(opciones.Options);
     }
+
+    private static LimitesTenantEf Limites() => new(Contexto());
 
     private static async Task AssertTraduceYSoloFallaLaRed(Func<Task> consulta)
     {

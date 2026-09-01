@@ -63,6 +63,68 @@ la tabla tiene una fila; estas lo dicen antes.
 
 ---
 
+### Y el CATÁLOGO de tipos también, con su advertencia
+
+Los cupos por empresa se ajustan sobre los tipos que existan, así que faltaba poder crear un
+tipo. Tres verbos más, en un recurso propio —`/api/plataforma/limites`— porque el catálogo no
+cuelga de ninguna empresa:
+
+| Verbo   | Ruta                                | Qué hace                                    |
+| ------- | ----------------------------------- | ------------------------------------------- |
+| `GET`   | `/api/plataforma/limites`           | Todos los tipos, activos e inactivos        |
+| `POST`  | `/api/plataforma/limites`           | Crea un tipo                                |
+| `PATCH` | `/api/plataforma/limites/{clave}`   | Edita lo editable. La clave no lo es        |
+
+**No hay DELETE, y es la regla del modelo**: la FK de `tenant_limite` es `RESTRICT`
+justamente para impedir que se borre un tipo que alguien tiene negociado. Un tipo se retira
+con `activo = false`.
+
+#### `reconocida`: la advertencia va en el CONTRATO, no en un comentario
+
+`TipoLimite` ya lo tenía escrito —«que el tipo de límite sea una fila no hace que un límite
+nuevo funcione sin desplegar»— y hasta ahora era una nota que solo leía quien abriera el
+archivo. Ahora es un campo del DTO: `ResumenTipoLimite.Reconocida` dice si la clave está en
+`ClavesLimite`, o sea **si hay código detrás**.
+
+Sin eso, alguien crea `max_obras`, le fija 50 a un cliente y da por hecho que el sistema lo va
+a respetar. Con eso, la fila lo dice a la vista. `FormatoClaveLimite.EsReconocida` vive en el
+dominio y tiene prueba propia, porque si ese cálculo se rompe el aviso desaparece en silencio.
+
+Ojo con la letra chica: hoy **ninguno acota, ni los cuatro reconocidos**, porque sigue sin
+escribirse la verificación. La diferencia es que esos cuatro acotarán cuando se escriba, y los
+inventados no.
+
+#### `FormatoClaveLimite` es nuevo, y no reusa `FormatoCodigoPlan`
+
+Por una letra: el del plan admite guiones y **no** admite guiones bajos, así que rechazaría
+`max_equipos` —las cuatro claves que ya están en la base—. Un formato que no acepta los valores
+que ya existen no es una validación, es un error a punto de pasar.
+
+Se admite el guion bajo y no el normal, para que haya una sola forma de escribir una clave: con
+las dos permitidas, `max-equipos` y `max_equipos` serían dos filas que nadie distingue de un
+vistazo.
+
+#### Lo demás
+
+`Excepciones` —cuántas empresas tienen cupo propio de ese tipo— viaja en el resumen por lo
+mismo que `Suscripciones` en `ResumenPlan`: retirar un tipo que veinte empresas tienen
+negociado no es lo mismo que retirar uno que no usa nadie.
+
+`EditarAsync` guarda con seguimiento y `SaveChanges` por la misma razón que `FijarAsync`: mover
+el valor por defecto cambia el cupo efectivo de **toda** empresa sin excepción propia, y eso
+tiene que quedar en la bitácora.
+
+En `ListarAsync`, `Reconocida` se rellena con `false` dentro de la consulta y se resuelve
+después con un `with` en memoria. Es a propósito: es una llamada a método, y una llamada a
+método dentro de un `Select` es exactamente la proyección que EF evalúa en el cliente. Aquí
+además no podría traducirse de ninguna forma —la lista de claves con código detrás vive en el
+ensamblado, no en la base—, así que se saca del árbol en lugar de dejar que EF decida.
+
+**Al 2026-09-01 la suite son 365 pruebas, 0 fallos**: 18 nuevas entre el formato de la clave y
+la traducción del conteo de excepciones.
+
+---
+
 ## El interceptor de auditoría, escrito — 2026-09-01
 
 **Era la última pieza transversal de la Fase 0 y ya no falta.** Las dos tablas `auditoria`

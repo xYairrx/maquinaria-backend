@@ -146,6 +146,11 @@ public static class RegistroInfraestructura
         // Los cupos por empresa. Aparte del catalogo comercial a proposito: el plan dice
         // que modulos, el tenant dice cuanto.
         servicios.AddScoped<ILimitesTenant, LimitesTenantEf>();
+
+        // El catalogo de TIPOS de limite: que limites sabe nombrar el sistema. Otra vez
+        // aparte, con el mismo criterio: aqui se administra el catalogo, alla el cupo de
+        // una empresa.
+        servicios.AddScoped<ICatalogoLimites, CatalogoLimitesEf>();
         servicios.AddScoped<CrearPlan>();
         servicios.AddScoped<IMigradorEmpresas, MigradorEmpresasEf>();
         servicios.AddScoped<IAprovisionadorBaseDatos, AprovisionadorBaseDatosNpgsql>();

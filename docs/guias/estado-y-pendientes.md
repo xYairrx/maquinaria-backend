@@ -2,6 +2,63 @@
 
 Última verificación: 2026-09-01.
 
+## El ámbito cruzado ya tiene pruebas — 2026-09-01
+
+Salió de un reporte que parecía grave y no lo era: estando dentro del panel como
+superadministrador, ir de `admin.localhost:4200/dashboard` a `bajio.localhost:4200/inicio`
+**dejaba entrar, y con otro usuario**. Y al revés también.
+
+### Qué pasaba de verdad
+
+Nada. Son dos sesiones distintas, en dos orígenes distintos, las dos abiertas de antes —el
+frontend lo documenta como decisión en `docs/integracion-backend.md` §Dos sesiones—.
+Comprobado en un navegador de verdad, escribiendo una marca en el `localStorage` de cada
+subdominio:
+
+| Desde                   | Lee la marca del otro | Sin sesión, `/inicio` y `/dashboard` acaban en |
+| ----------------------- | --------------------- | ---------------------------------------------- |
+| `admin.localhost:4200`  | `null`                | `/entrar`                                      |
+| `bajio.localhost:4200`  | `null`                | `/entrar`                                      |
+
+`localStorage` está partido por ORIGEN, y el origen incluye el host completo. El token de un
+subdominio es ilegible desde el otro.
+
+### Lo que el reporte SÍ destapó
+
+**No había ni una prueba que fijara la separación de ámbitos.** Los dos tokens los firma la
+misma llave; lo único que los separa son la audiencia y el claim `ambito`, y lo único que
+exige esa separación son las policies declaradas en cada controlador. Quitarle el
+`[Authorize(PoliticasAutorizacion.Empresa)]` a un controlador dejaba la suite **en verde**.
+
+`AmbitoCruzadoPruebas` lo cierra, en dos mitades porque el resultado depende de dos piezas y
+las dos se pueden romper sin darse cuenta:
+
+1. **Lo que el token lleva**, ejercitando `ProveedorTokensJwt` de verdad: cada uno con su
+   audiencia y su `ambito`, ninguno con el del otro, el de plataforma sin `tenant` ni
+   permisos, y —la menos obvia— que **las dos audiencias por omisión no coincidan**. Salen de
+   configuración, así que un `Jwt__AudienciaEmpresa` mal puesto en Railway las igualaría y
+   tumbaría la primera barrera en silencio.
+2. **Lo que cada controlador exige**, por reflexión y con el mismo molde que
+   `PermisosDeclaradosPruebas`: el ámbito que le toca por dónde vive, una lista corta y
+   explícita de los cuatro flujos anónimos, que ninguno exija los dos a la vez —serían dos
+   requisitos que ningún token cumple, o sea un endpoint muerto— y que `sesion/actual` exija
+   ámbito aunque su clase esté exenta.
+
+**Se comprobó que muerden**, que es lo único que distingue una prueba de un adorno: quitado
+el `[Authorize]` de `MarcasController`, la suite falla con
+«MarcasController deberia exigir la policy 'empresa' en la clase. Declara: ninguna».
+Restaurado, vuelve a verde.
+
+**435 pruebas, 0 fallos** (eran 365).
+
+### Lo que estas pruebas NO cubren
+
+Que ASP.NET aplique bien esas policies: eso es del framework, y comprobarlo sería probar a
+Microsoft. Y no se prueba mandando peticiones reales porque levantar la tubería exige las dos
+cadenas de conexión y un Postgres vivo — la suite corre sin base de datos a propósito.
+
+---
+
 ## Los cupos de una empresa ya tienen API — 2026-09-01
 
 `tenant_limite` y `tipo_limite` existían desde la Fase 0 y **no los tocaba nadie**: ni un

@@ -2,6 +2,67 @@
 
 Última verificación: 2026-09-01.
 
+## Los cupos de una empresa ya tienen API — 2026-09-01
+
+`tenant_limite` y `tipo_limite` existían desde la Fase 0 y **no los tocaba nadie**: ni un
+endpoint, ni una pantalla. Ya se administran desde el panel.
+
+| Verbo    | Ruta                                              | Qué hace                                  |
+| -------- | ------------------------------------------------- | ----------------------------------------- |
+| `GET`    | `/api/plataforma/empresas/{slug}/limites`          | Los cuatro tipos, con su valor efectivo   |
+| `PUT`    | `/api/plataforma/empresas/{slug}/limites/{clave}`  | Fija la excepción. `-1` es sin límite     |
+| `DELETE` | `/api/plataforma/empresas/{slug}/limites/{clave}`  | La quita: vuelve al valor por defecto     |
+
+`ILimitesTenant` + `LimitesTenantEf`, **separado de `ICatalogoPlanes`** y no por simetría: el
+plan define QUÉ MÓDULOS tiene una empresa y se administra una vez en el catálogo; el cupo define
+CUÁNTO y se negocia empresa por empresa. Juntarlos haría que administrar el catálogo comercial y
+ajustarle el cupo a un cliente parecieran la misma operación, que es justo la confusión que el
+modelo evita colgando los límites del tenant.
+
+### Se guarda con `SaveChanges`, y eso es la decisión
+
+`FijarAsync` y `QuitarAsync` usan seguimiento y `SaveChangesAsync`, **no `ExecuteUpdateAsync`**.
+Mover el cupo de un cliente es de las decisiones más privilegiadas del sistema —esta misma guía
+lo dice al justificar la tabla `auditoria` de la central— y el interceptor de auditoría solo ve
+lo que pasa por `SaveChanges`. Con la versión rápida el cambio no quedaría en ninguna bitácora.
+
+Es el primer sitio donde el techo de `ExecuteUpdateAsync` cambió una decisión de
+implementación en lugar de quedarse anotado.
+
+### Tres decisiones del contrato
+
+- **Los tres verbos devuelven la lista COMPLETA ya actualizada.** El panel se repinta de la
+  respuesta y no puede quedarse enseñando el estado anterior. Mismo criterio que
+  `CambiarActivoAsync`.
+- **Siempre salen los cuatro tipos**, tenga o no fila la empresa: `tenant_limite` es dispersa y
+  devolver solo las excepciones haría que una empresa recién dada de alta pareciera no tener
+  límites, cuando lo que pasa es que los hereda todos. Por eso `ListarAsync` devuelve `null`
+  —404— y nunca una lista vacía: vacío significaría otra cosa que no puede pasar.
+- **`QuitarAsync` no exige que el tipo esté activo.** Un tipo retirado del catálogo puede tener
+  excepciones vivas de antes, y no poder quitarlas las dejaría congeladas para siempre.
+
+### Lo que esto NO hace
+
+**Fijar un cupo no lo aplica.** Sigue sin haber un caso de uso que lea estos valores para
+bloquear una operación, así que hoy esto administra un dato que no acota nada — y la pantalla lo
+dice en voz alta, para que nadie confíe en un tope que no existe. Se construyó igual porque el
+dato tiene que existir y ser editable antes de que haya algo que lo lea, no después.
+
+Cuando se escriba la verificación, la advertencia de `TenantLimite` sigue vigente: el límite vive
+en la base CENTRAL y el consumo en la de la EMPRESA, sin transacción que abarque las dos.
+
+### Comprobado
+
+`dotnet build` en 0 errores y 0 advertencias, y `dotnet test` en **347 pruebas, 0 fallos** —dos
+nuevas—. Las dos son de TRADUCCIÓN, no de comportamiento: la resolución de cupos recorre el
+catálogo y le cuelga a cada tipo dos subconsultas correlacionadas contra `tenant_limite`, que es
+exactamente la forma que EF evalúa en el cliente cuando se escribe mal. Ahí no truena hasta que
+la tabla tiene una fila; estas lo dicen antes.
+
+**No se ha ejercitado contra Postgres**: ninguna fila de `tenant_limite` se ha escrito todavía.
+
+---
+
 ## El interceptor de auditoría, escrito — 2026-09-01
 
 **Era la última pieza transversal de la Fase 0 y ya no falta.** Las dos tablas `auditoria`

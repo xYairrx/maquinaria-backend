@@ -142,6 +142,10 @@ public static class RegistroInfraestructura
         // registro de tenants porque es otra responsabilidad —administrar el catalogo, no
         // dar de alta empresas— y otro momento: se define una vez y se consulta mucho.
         servicios.AddScoped<ICatalogoPlanes, CatalogoPlanesEf>();
+
+        // Los cupos por empresa. Aparte del catalogo comercial a proposito: el plan dice
+        // que modulos, el tenant dice cuanto.
+        servicios.AddScoped<ILimitesTenant, LimitesTenantEf>();
         servicios.AddScoped<CrearPlan>();
         servicios.AddScoped<IMigradorEmpresas, MigradorEmpresasEf>();
         servicios.AddScoped<IAprovisionadorBaseDatos, AprovisionadorBaseDatosNpgsql>();
